@@ -1,0 +1,9 @@
+# Configuration pour Render (https://render.com) - offre gratuite.
+# Render lit ce fichier tout seul quand tu connectes le depot.
+services:
+  - type: web
+    name: quizddd
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python regie-serveur.py

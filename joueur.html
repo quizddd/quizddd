@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Régie Quiz — Joueur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;600;700&family=Instrument+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#0D0F22; --bg-2:#12152C; --surface:#1A1E3C; --surface-2:#232848; --surface-3:#2C3255;
+  --line:#2F3560; --line-soft:#242949;
+  --text:#F2EFE6; --text-2:#C2C6E2; --text-3:#9AA0C6;
+  --gold:#F5B841; --gold-ink:#241A03; --gold-dim:rgba(245,184,65,.16);
+  --rose:#FF5470; --rose-dim:rgba(255,84,112,.16);
+  --mint:#35D6A0; --mint-ink:#03231A; --mint-dim:rgba(53,214,160,.16);
+  --r-s:8px; --r-m:12px; --r-l:18px; --r-xl:26px;
+  --f-display:"Antonio","Arial Narrow",sans-serif;
+  --f-body:"Instrument Sans",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --f-mono:"DM Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--f-body); font-size:17px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{margin:0; line-height:1.15; text-wrap:balance}
+button,input{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--gold); outline-offset:2px; border-radius:6px}
+
+.app{min-height:100vh; min-height:100dvh; display:flex; flex-direction:column}
+/* La barre et le chrono restent collés en haut : on doit voir le temps
+   qui reste même en ayant fait défiler la page. */
+.top{position:sticky; top:0; z-index:10; flex:none}
+.bar{
+  display:flex; align-items:center; gap:10px; padding:9px 14px;
+  background:var(--bg-2); border-bottom:1px solid var(--line-soft);
+}
+.mark{
+  width:13px; height:13px; border-radius:50%; flex:none;
+  background:radial-gradient(circle at 32% 30%, #FFF0C6 0 18%, var(--gold) 42%, #B67C10 100%);
+  box-shadow:0 0 10px rgba(245,184,65,.5);
+}
+.brand{font-family:var(--f-display); font-size:1.1rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase}
+.brand em{font-style:normal; color:var(--gold)}
+.bar .who{margin-left:auto; display:flex; align-items:center; gap:8px; font-size:.85rem; color:var(--text-3)}
+.bar .who b{color:var(--text); font-weight:600}
+.pastille{
+  font-family:var(--f-mono); font-size:.72rem; padding:2px 8px; border-radius:999px;
+  background:var(--surface-2); color:var(--text-3); border:1px solid var(--line-soft);
+}
+
+.timer{height:5px; background:var(--surface-2); flex:none; overflow:hidden}
+.timer i{display:block; height:100%; width:100%; background:var(--gold); transition:width .25s linear}
+.timer.warn i{background:var(--rose)}
+
+main{flex:1; min-height:0; display:flex; flex-direction:column; align-items:center;
+     padding:20px 16px 32px; gap:18px; width:100%; max-width:720px; margin:0 auto}
+
+.eyebrow{
+  font-family:var(--f-display); font-size:.82rem; font-weight:600; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--text-3); text-align:center;
+}
+.qtext{font-size:clamp(1.25rem,4.5vw,1.8rem); font-weight:600; text-align:center}
+.chrono{
+  margin-left:auto; font-family:var(--f-mono); font-size:1.45rem; font-weight:500;
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1;
+  padding:2px 4px; color:var(--text);
+}
+.chrono.warn{color:var(--rose); animation:bat .9s ease-in-out infinite}
+.chrono.fini{color:var(--rose)}
+@keyframes bat{0%,100%{opacity:1}50%{opacity:.4}}
+
+.card{background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--r-l); padding:18px}
+.field{display:flex; flex-direction:column; gap:7px; width:100%}
+label{font-family:var(--f-display); font-size:.8rem; font-weight:600; letter-spacing:.12em;
+      text-transform:uppercase; color:var(--text-3)}
+input[type=text]{
+  width:100%; padding:13px 14px; border-radius:var(--r-m); border:1px solid var(--line);
+  background:var(--surface-2); color:var(--text); font-size:1.05rem;
+}
+input:focus{outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(245,184,65,.3)}
+input::placeholder{color:var(--text-3)}
+#code{text-transform:uppercase; letter-spacing:.35em; font-family:var(--f-mono); text-align:center; font-size:1.4rem}
+
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:13px 20px; border-radius:var(--r-m); cursor:pointer; border:1px solid var(--line);
+  background:var(--surface-2); font-weight:600; font-size:1rem; transition:transform .1s, filter .15s;
+}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn-gold{background:var(--gold); color:var(--gold-ink); border-color:transparent}
+.btn-rose{background:var(--rose); color:#FFF6F8; border-color:transparent}
+.btn-lg{width:100%; padding:16px; font-size:1.08rem}
+
+.choices{display:grid; gap:10px; width:100%}
+.choice{
+  display:flex; align-items:center; gap:14px; padding:15px 16px; text-align:left; width:100%;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-l);
+  cursor:pointer; font-size:1.05rem; transition:border-color .15s, background .15s;
+}
+.choice .lt{
+  width:36px; height:36px; flex:none; display:grid; place-items:center; border-radius:10px;
+  background:var(--surface-3); font-family:var(--f-display); font-weight:700; font-size:1.15rem;
+}
+.choice.on{border-color:var(--gold); background:var(--gold-dim)}
+.choice.on .lt{background:var(--gold); color:var(--gold-ink)}
+.choice.good{border-color:var(--mint); background:var(--mint-dim)}
+.choice.good .lt{background:var(--mint); color:var(--mint-ink)}
+.choice:disabled{cursor:default}
+
+.media{width:100%; display:flex; flex-direction:column; align-items:center; gap:10px}
+.media img{max-width:100%; max-height:46vh; border-radius:var(--r-l); display:block}
+.media video{width:100%; border-radius:var(--r-l); background:#000; aspect-ratio:16/9}
+.media audio{width:100%}
+.media .done{
+  width:100%; padding:34px 16px; text-align:center; color:var(--text-3);
+  border:1px dashed var(--line); border-radius:var(--r-l); background:var(--surface);
+}
+.note{font-size:.85rem; color:var(--text-3); text-align:center}
+
+.etat{
+  width:100%; padding:12px 16px; border-radius:var(--r-m); text-align:center; font-weight:600;
+  background:var(--surface-2); border:1px solid var(--line-soft);
+}
+.etat.ok{background:var(--mint-dim); color:var(--mint); border-color:transparent}
+.etat.att{background:var(--gold-dim); color:var(--gold); border-color:transparent}
+.etat.no{background:var(--rose-dim); color:var(--rose); border-color:transparent}
+
+.reveal{
+  width:100%; border-radius:var(--r-xl); padding:20px; background:var(--gold-dim);
+  border:1px solid var(--gold);
+}
+.reveal .lbl{font-family:var(--f-display); font-size:.78rem; letter-spacing:.16em;
+             text-transform:uppercase; color:var(--gold); display:block; margin-bottom:5px}
+.reveal .ans{font-size:1.4rem; font-weight:700; line-height:1.25}
+.reveal .why{margin-top:9px; color:var(--text-2); font-size:.95rem}
+
+.rang{width:100%; display:flex; flex-direction:column; gap:5px}
+.rang .l{
+  display:flex; align-items:center; gap:12px; padding:10px 14px; border-radius:var(--r-m);
+  background:var(--surface); border:1px solid var(--line-soft);
+}
+.rang .l.moi{border-color:var(--gold); background:var(--gold-dim)}
+.rang .n{font-family:var(--f-mono); color:var(--text-3); width:22px}
+.rang .nm{flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rang .pt{font-family:var(--f-display); font-size:1.25rem; font-weight:700}
+
+.centre{margin:auto; width:100%; max-width:400px; display:flex; flex-direction:column; gap:16px}
+.gros{font-family:var(--f-display); font-size:2rem; font-weight:700; letter-spacing:.03em;
+      text-transform:uppercase; text-align:center}
+.err{color:var(--rose); font-size:.9rem; text-align:center; min-height:1.2em}
+.pulse{animation:p 1.6s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important; transition:none !important}}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <header class="bar">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="brand">Régie<em>Quiz</em></span>
+      <span class="chrono" id="chrono" hidden role="timer" aria-live="off"></span>
+      <span class="who" id="who"></span>
+    </header>
+    <div class="timer" id="timer" hidden><i id="timerFill"></i></div>
+  </div>
+  <main id="main"></main>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const MAIN = $("#main");
+const CLE = "regie-quiz:joueur";
+
+let ME = { code:"", playerId:"", name:"" };
+let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
+
+try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
+const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
+
+const params = new URLSearchParams(location.search);
+if(params.get("c")) ME.code = params.get("c").toUpperCase();
+
+/* ------------------------------------------------ écran d'entrée */
+function vueEntree(erreur){
+  MAIN.innerHTML =
+    '<div class="centre">'+
+      '<div class="gros">Rejoindre la partie</div>'+
+      '<div class="field"><label for="code">Code de la partie</label>'+
+        '<input type="text" id="code" maxlength="7" autocomplete="off" autocapitalize="characters" '+
+        'spellcheck="false" value="'+esc(ME.code)+'" placeholder="ABCDE"></div>'+
+      '<div class="field"><label for="nom">Ton pseudo</label>'+
+        '<input type="text" id="nom" maxlength="24" autocomplete="nickname" '+
+        'value="'+esc(ME.name)+'" placeholder="Comme tu veux"></div>'+
+      '<button class="btn btn-gold btn-lg" id="go">Entrer</button>'+
+      '<p class="err" id="err">'+esc(erreur||"")+'</p>'+
+      '<p class="note">Aucune inscription. Ton pseudo suffit, et il reste sur cet appareil.</p>'+
+    '</div>';
+  const go = ()=> rejoindre($("#code").value, $("#nom").value);
+  $("#go").onclick = go;
+  $("#nom").onkeydown = e => { if(e.key==="Enter") go(); };
+  $("#code").onkeydown = e => { if(e.key==="Enter") $("#nom").focus(); };
+  ($("#code").value ? $("#nom") : $("#code")).focus();
+}
+
+async function rejoindre(code, nom){
+  code = (code||"").trim().toUpperCase();
+  nom = (nom||"").trim();
+  if(!code) return vueEntree("Il faut le code de la partie.");
+  if(!nom) return vueEntree("Choisis un pseudo.");
+  $("#go").disabled = true;
+  try{
+    const r = await fetch("/api/join?room="+encodeURIComponent(code), {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name:nom, playerId:ME.playerId})
+    });
+    const d = await r.json();
+    if(!r.ok || !d.ok) return vueEntree(d.error || "Impossible de rejoindre.");
+    ME = {code:d.code, playerId:d.playerId, name:d.name};
+    garder();
+    V = -1;
+    boucle();
+  }catch(e){ vueEntree("Le serveur ne répond pas. Réessaie."); }
+}
+
+/* ------------------------------------------------ boucle d'écoute */
+async function boucle(){
+  while(ME.playerId){
+    try{
+      const r = await fetch("/api/play?room="+encodeURIComponent(ME.code)+
+                            "&p="+encodeURIComponent(ME.playerId)+"&v="+V, {cache:"no-store"});
+      if(r.status === 404){ ME.playerId=""; garder(); return vueEntree("La partie n'existe plus."); }
+      const d = await r.json();
+      V = d.v;
+      if(!d.me){ ME.playerId=""; garder(); return vueEntree("Tu as été retiré de la partie."); }
+      DERIVE = d.now*1000 - Date.now();
+      ETAT = d;
+      dessiner();
+    }catch(e){
+      majBandeau(true);
+      await new Promise(r=>setTimeout(r, 2000));
+    }
+  }
+}
+
+function majBandeau(coupe){
+  $("#who").innerHTML = ME.name
+    ? '<span class="pastille">'+esc(ME.code)+'</span><b>'+esc(ME.name)+'</b>'+
+      (coupe ? '<span class="pastille pulse">reconnexion…</span>' : '')
+    : "";
+}
+
+/* ------------------------------------------------ rendu */
+function dessiner(){
+  majBandeau(false);
+  const d = ETAT;
+  const q = d.question;
+  const cle = JSON.stringify([q && q.id, d.open, d.mine, d.reveal, d.canBuzz,
+                              d.buzzWinner, d.media && d.media.id, d.mediaStart>0,
+                              d.scores.length]);
+  if(cle !== VU){ VU = cle; construire(); }
+  majChrono();
+}
+
+function construire(){
+  const d = ETAT, q = d.question;
+  if(!q){
+    MAIN.innerHTML =
+      '<div class="centre"><div class="gros">Tu es dans la partie</div>'+
+      '<p class="etat att pulse">En attente de la '+
+        (d.scores && d.scores.length ? 'prochaine' : 'première')+' question…</p>'+
+      (d.players.length ? '<p class="note">'+d.players.length+' joueur'+
+        (d.players.length>1?'s':'')+' : '+esc(d.players.join(", "))+'</p>' : '')+
+      classement(true)+'</div>';
+    return;
+  }
+
+  let h = '<div class="eyebrow">'+esc(q.round||"")+(q.round?' · ':'')+
+          'Question '+q.index+'/'+q.total+
+          (q.points!=null ? ' · '+q.points+' pt'+(Math.abs(q.points)>1?'s':'') : '')+'</div>';
+
+  if(d.media) h += '<div class="media" id="media"></div>';
+  if(q.text)  h += '<h2 class="qtext">'+esc(q.text)+'</h2>';
+
+  if(d.reveal){
+    h += '<div class="reveal"><span class="lbl">Réponse</span>'+
+         '<div class="ans">'+esc(d.reveal.answer || "—")+'</div>'+
+         (d.reveal.note ? '<div class="why">'+esc(d.reveal.note)+'</div>' : '')+'</div>';
+    if(d.mine) h += '<p class="etat">Ta réponse : <b>'+esc(d.mine)+'</b></p>';
+    h += '<p class="note">L\'animateur attribue les points.</p>';
+  } else if(q.buzzMode && !d.mine){
+    if(d.buzzWinner && d.buzzWinner !== d.me){
+      h += '<p class="etat no"><b>'+esc(d.buzzWinner)+'</b> a buzzé — à lui de répondre.</p>';
+    } else if(d.canBuzz){
+      h += '<button class="btn btn-rose btn-lg" id="buzz" style="font-size:1.4rem;padding:26px">🔔 BUZZ</button>';
+    } else if(d.buzzWinner === d.me){
+      h += zoneReponse();
+    } else {
+      h += '<p class="etat">Tu as déjà eu ta chance sur cette question.</p>';
+    }
+  } else if(!d.open){
+    h += '<p class="etat no">Les réponses sont closes.</p>';
+    if(d.mine) h += '<p class="etat">Ta réponse : <b>'+esc(d.mine)+'</b></p>';
+  } else {
+    h += zoneReponse();
+  }
+
+  h += classement(false);
+  MAIN.innerHTML = h;
+
+  if($("#buzz")) $("#buzz").onclick = buzzer;
+  brancherReponse();
+  if(d.media) monterMedia();
+}
+
+function zoneReponse(){
+  const d = ETAT, q = d.question;
+  if(q.type === "qcm" && q.choices.length){
+    const choisies = (d.mine||"").split(",").map(s=>s.trim()).filter(Boolean);
+    return '<div class="choices">'+ q.choices.map(c=>
+      '<button class="choice'+(choisies.indexOf(c.letter)>=0?" on":"")+'" data-l="'+c.letter+'">'+
+      '<span class="lt">'+c.letter+'</span><span>'+esc(c.text)+'</span></button>').join("")+'</div>'+
+      (q.multi ? '<p class="note">Plusieurs réponses possibles — reclique pour retirer.</p>' : '')+
+      (d.mine ? '<p class="etat ok">Réponse enregistrée : '+esc(d.mine)+'</p>' : '');
+  }
+  return '<div class="field"><label for="rep">Ta réponse</label>'+
+         '<input type="text" id="rep" maxlength="300" autocomplete="off" '+
+         'value="'+esc(d.mine||"")+'" placeholder="Écris ici"></div>'+
+         '<button class="btn btn-gold btn-lg" id="env">'+(d.mine?"Corriger":"Envoyer")+'</button>'+
+         (d.mine ? '<p class="etat ok">Réponse enregistrée : '+esc(d.mine)+'</p>' : '');
+}
+
+function brancherReponse(){
+  const d = ETAT, q = d.question;
+  document.querySelectorAll(".choice[data-l]").forEach(b=> b.onclick = ()=>{
+    let cur = (d.mine||"").split(",").map(s=>s.trim()).filter(Boolean);
+    const l = b.dataset.l;
+    if(q.multi){
+      const i = cur.indexOf(l);
+      if(i>=0) cur.splice(i,1); else cur.push(l);
+      cur.sort();
+    } else cur = [l];
+    envoyer(cur.join(", "));
+  });
+  const env = $("#env");
+  if(env){
+    env.onclick = ()=> envoyer($("#rep").value);
+    $("#rep").onkeydown = e => { if(e.key==="Enter") envoyer($("#rep").value); };
+  }
+}
+
+async function envoyer(valeur){
+  valeur = (valeur||"").trim();
+  if(!valeur) return;
+  ETAT.mine = valeur; VU = ""; construire();      // retour immédiat
+  try{
+    const r = await fetch("/api/answer?room="+encodeURIComponent(ME.code), {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({playerId:ME.playerId, value:valeur})
+    });
+    if(!r.ok){
+      const d = await r.json().catch(()=>({}));
+      ETAT.mine = null; VU = "";
+      construire();
+      const z = document.createElement("p");
+      z.className = "etat no"; z.textContent = d.error || "Réponse refusée.";
+      MAIN.appendChild(z);
+    }
+  }catch(e){}
+}
+
+async function buzzer(){
+  const b = $("#buzz"); if(b) b.disabled = true;
+  try{
+    await fetch("/api/playerbuzz?room="+encodeURIComponent(ME.code), {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({playerId:ME.playerId})
+    });
+  }catch(e){}
+}
+
+function classement(seul){
+  const d = ETAT;
+  if(!d.scores || !d.scores.length) return "";
+  const tri = d.scores.slice().sort((a,b)=> b.score-a.score);
+  return '<div class="rang">'+ tri.slice(0,12).map((s,i)=>
+    '<div class="l'+(s.name===d.me?" moi":"")+'"><span class="n">'+(i+1)+'</span>'+
+    '<span class="nm">'+esc(s.name)+'</span><span class="pt">'+s.score+'</span></div>').join("")+'</div>';
+}
+
+/* ------------------------------------------------ chrono */
+const mmss = s => { s = Math.max(0, Math.ceil(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+
+function majChrono(){
+  const bar = $("#timer"), fill = $("#timerFill"), num = $("#chrono"), d = ETAT;
+  if(!d || !d.deadline || !d.open){
+    bar.hidden = true;
+    num.hidden = true;
+    clearInterval(TIC);
+    return;
+  }
+  bar.hidden = false;
+  num.hidden = false;
+  clearInterval(TIC);
+  const total = Math.max(1, d.deadline - d.startedAt);
+  const battre = ()=>{
+    const reste = Math.max(0, d.deadline*1000 - (Date.now()+DERIVE)) / 1000;
+    fill.style.width = Math.max(0, Math.min(100, reste/total*100))+"%";
+    num.textContent = mmss(reste);
+    bar.classList.toggle("warn", reste <= 5);
+    num.classList.toggle("warn", reste <= 5 && reste > 0);
+    num.classList.toggle("fini", reste <= 0);
+    if(reste <= 0) clearInterval(TIC);
+  };
+  battre();
+  TIC = setInterval(battre, 200);
+}
+
+/* ------------------------------------------------ médias synchronisés */
+function monterMedia(){
+  const hote = $("#media"), d = ETAT, m = d.media;
+  if(!hote || !m) return;
+  /* Tant que l'animateur n'a pas lancé, personne ne démarre : c'est ce qui
+     garantit que tout le monde voit et entend la même chose au même moment. */
+  if(!d.mediaStart){
+    hote.innerHTML = "<div class=\"done pulse\">L’animateur va lancer " +
+      (m.kind === "video" ? "la vidéo" : m.kind === "audio" ? "l’extrait" : "le média") +
+      "…</div>";
+    return;
+  }
+  const src = "/api/media?room="+encodeURIComponent(ME.code)+"&id="+encodeURIComponent(m.id);
+  const decalage = Math.max(0, (Date.now()+DERIVE)/1000 - d.mediaStart);
+
+  if(m.kind === "image"){
+    hote.innerHTML = '<img alt="Image de la question" src="'+src+'">';
+    return;
+  }
+  if(m.kind === "video"){
+    /* Pas de commandes : la vidéo démarre là où en est l'animateur, et
+       personne ne peut la rembobiner. Elle disparaît à la fin. */
+    hote.innerHTML = '<video id="vid" playsinline preload="auto" src="'+src+'"></video>';
+    const v = $("#vid");
+    v.onloadedmetadata = ()=>{
+      if(decalage > 0 && decalage < (v.duration||1e9)) v.currentTime = decalage;
+      lancer(v, hote);
+    };
+    v.onended = ()=>{ hote.innerHTML = '<div class="done">Extrait terminé</div>'; };
+    return;
+  }
+  hote.innerHTML = '<audio id="aud" preload="auto" src="'+src+'"></audio>'+
+                   '<div class="note" id="audNote">Lecture en cours…</div>';
+  const a = $("#aud");
+  a.onloadedmetadata = ()=>{
+    if(decalage > 0 && decalage < (a.duration||1e9)) a.currentTime = decalage;
+    lancer(a, hote);
+  };
+  a.onended = ()=>{ const n=$("#audNote"); if(n) n.textContent = "Extrait terminé"; };
+}
+
+function lancer(el, hote){
+  const p = el.play();
+  if(p && p.catch) p.catch(()=>{
+    if(hote.querySelector(".btn")) return;
+    const b = document.createElement("button");
+    b.className = "btn btn-gold btn-lg";
+    b.textContent = "▶  Lancer";
+    b.onclick = ()=>{ b.remove(); el.play().catch(()=>{}); };
+    hote.appendChild(b);
+  });
+}
+
+/* ------------------------------------------------ démarrage */
+if(ME.playerId && ME.code){
+  majBandeau(false);
+  MAIN.innerHTML = '<div class="centre"><p class="etat att pulse">Connexion…</p></div>';
+  boucle();
+} else {
+  vueEntree("");
+}
+</script>
+</body>
+</html>
