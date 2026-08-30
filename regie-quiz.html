@@ -476,6 +476,17 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
 .buzz-banner .bz{font-size:1.3rem}
 .buzz-banner strong{font-family:var(--f-display); font-size:1.35rem; letter-spacing:.03em; text-transform:uppercase}
 
+/* Lien YouTube sur une question audio : le lecteur reste, mais couvert. */
+.audio-yt{
+  position:relative; width:100%; max-width:min(920px,92vw); height:150px;
+  border-radius:var(--r-l); overflow:hidden; background:var(--surface);
+}
+.audio-yt iframe{position:absolute; inset:0; width:100%; height:100%; border:0}
+.audio-yt .masque{
+  position:absolute; inset:0; display:grid; place-items:center;
+  background:var(--surface); color:var(--gold); font-size:2.6rem;
+}
+
 .media-done{
   display:flex; align-items:center; justify-content:center; gap:16px; width:100%;
   padding:38px 20px; border:1px dashed var(--line); border-radius:var(--r-l);
@@ -1353,10 +1364,10 @@ function mediaEditor(host, m, opts){
         '<div class="field"><label>Arrêter à (s)</label><input type="number" min="0" step="1" data-stop value="'+(m.stop||0)+'" placeholder="0 = jusqu\'à la fin"></div>'+
       '</div>';
     }
-    if(has && opts.blur && m.kind==="image"){
+    if(has && opts.blur && (m.kind==="image" || m.kind==="video")){
       h += '<div class="field"><label>Flou de départ — '+(m.blur||0)+'</label>'+
            '<input type="range" min="0" max="40" step="1" data-blur value="'+(m.blur||0)+'">'+
-           '<span class="hint">Tu réduis le flou en direct pendant la question, pour faire monter la salle.</span></div>';
+           '<span class="hint">Tu réduis le flou en direct pendant la question, et l\'écran des joueurs suit.</span></div>';
     }
     if(has && opts.hide){
       h += '<label class="switch"><input type="checkbox" data-hidden'+(m.hidden?" checked":"")+'><span class="track"></span>'+
@@ -1692,7 +1703,8 @@ function viewPlay(){
   const it = curItem();
   const pts = qPoints(it.q, it.round, quiz);
   const tim = qTimer(it.q, quiz);
-  if(p.blur === null) p.blur = it.q.media.kind==="image" ? (it.q.media.blur||0) : 0;
+  if(p.blur === null)
+    p.blur = (it.q.media.kind==="image" || it.q.media.kind==="video") ? (it.q.media.blur||0) : 0;
   if(!p.running && !p.endAt) p.left = tim;
 
   MAIN.innerHTML =
@@ -1716,7 +1728,7 @@ function viewPlay(){
         '<button class="btn btn-ghost" id="tStop" title="Arrêter la partie">\u23F9</button>'+
         (tim>0
           ? '<button class="btn'+(p.running?" btn-rose":" btn-outline")+'" id="tStart">'+(p.running?"Pause":"Chrono")+'<span class="kbd">espace</span></button>'+
-            '<button class="btn btn-outline" id="tPlus">+10 s</button>'+
+            '<button class="btn btn-outline" id="tPlus">+5 s</button>'+
             '<button class="btn btn-ghost icon-btn" id="tReset" title="Remettre le chrono">↺</button>'
           : '<span class="pill">sans chrono</span>')+
         '<span class="spacer"></span>'+
@@ -1742,7 +1754,7 @@ function viewPlay(){
   $("#tPrev").onclick = ()=> gotoQ(p.i-1);
   $("#tNext").onclick = ()=> p.i===list.length-1 ? finishQuiz() : gotoQ(p.i+1);
   if($("#tStart")) $("#tStart").onclick = toggleTimer;
-  if($("#tPlus"))  $("#tPlus").onclick  = ()=> addTime(10);
+  if($("#tPlus"))  $("#tPlus").onclick  = ()=> addTime(5);
   if($("#tReset")) $("#tReset").onclick = resetTimer;
   if($("#tReveal"))$("#tReveal").onclick= reveal;
   if($("#tHide"))  $("#tHide").onclick  = ()=>{ p.phase="question"; viewPlay(); };
@@ -1763,7 +1775,7 @@ function renderBuzzBanner(){
   b.hidden = !gagnant;
   if(gagnant){
     b.innerHTML = '<span class="bz" aria-hidden="true">\uD83D\uDD14</span>'+
-      '<span><strong>'+esc(gagnant.name)+'</strong> a buzzé — à lui de répondre</span>';
+      '<span><strong>'+esc(gagnant.name)+'</strong> a buzzé et prend la main</span>';
   }
 }
 
@@ -1826,37 +1838,56 @@ async function renderStage(){
 }
 
 /* Montage d'un média sur la scène */
+/* Le curseur de flou, commun aux images et aux vidéos. Ce que l'animateur
+   règle ici part vers les joueurs, pour que tout le monde voie le même flou. */
+function curseurFlou(m){
+  if(!(m.blur||0)) return "";
+  return '<div style="width:min(460px,90%);display:flex;align-items:center;gap:10px">'+
+    '<span class="eyebrow" style="font-size:.72rem">Flou</span>'+
+    '<input type="range" id="blurSlider" min="0" max="'+(m.blur||20)+'" step="1" value="'+S.play.blur+'">'+
+    '<button class="btn btn-sm btn-outline" id="blurClear">Net</button></div>';
+}
+function brancheFlou(el){
+  const s = $("#blurSlider");
+  if(!s || !el) return;
+  const applique = v => {
+    S.play.blur = Number(v)||0;
+    el.style.filter = "blur("+S.play.blur+"px)";
+    if(typeof partieFlou === "function") partieFlou(S.play.blur);
+  };
+  s.oninput = e => applique(e.target.value);
+  const net = $("#blurClear");
+  if(net) net.onclick = ()=>{ s.value = 0; applique(0); };
+}
+
 async function mountMedia(host, m, isMain){
   const src = m.assetId ? await assetURL(m.assetId) : m.url;
   if(!src){
     host.innerHTML = '<div class="media-hidden">Média introuvable — il a peut-être été perdu au rechargement.</div>';
     return;
   }
-  const yt = m.kind==="video" ? ytId(src) : null;
+  const yt = ytId(src);
 
   if(m.kind === "image"){
     host.innerHTML = '<img id="stageImg" alt="Image de la question" src="'+esc(src)+'" style="filter:blur('+(isMain?S.play.blur:0)+'px)">'+
-      (isMain && (m.blur||0) > 0
-        ? '<div style="width:min(460px,90%);display:flex;align-items:center;gap:10px">'+
-          '<span class="eyebrow" style="font-size:.72rem">Flou</span>'+
-          '<input type="range" id="blurSlider" min="0" max="'+(m.blur||20)+'" step="1" value="'+S.play.blur+'">'+
-          '<button class="btn btn-sm btn-outline" id="blurClear">Net</button></div>'
-        : "");
-    if($("#blurSlider")){
-      const img = $("#stageImg");
-      $("#blurSlider").oninput = e => { S.play.blur = Number(e.target.value); img.style.filter = "blur("+S.play.blur+"px)"; };
-      $("#blurClear").onclick = ()=>{ S.play.blur = 0; $("#blurSlider").value = 0; img.style.filter = "blur(0px)"; };
-    }
+      (isMain ? curseurFlou(m) : "");
+    brancheFlou($("#stageImg"));
     return;
   }
   if(m.kind === "video"){
     if(yt){
       host.innerHTML = '<iframe id="stageVid" allow="autoplay; fullscreen" allowfullscreen '+
+        'style="filter:blur('+(isMain?S.play.blur:0)+'px)" '+
         'src="https://www.youtube-nocookie.com/embed/'+esc(yt)+'?rel=0&modestbranding=1'+(m.start?"&start="+Math.round(m.start):"")+'"></iframe>'+
-        '<p class="hint">Lecture YouTube — nécessite une connexion, et ne fonctionne pas dans la version publiée en ligne.</p>';
+        (isMain ? curseurFlou(m) : "")+
+        '<p class="hint">Lecture YouTube — tes joueurs la reçoivent aussi, mais devront peut-être toucher la vidéo pour la lancer. Pour une diffusion vraiment synchronisée, importe plutôt le fichier.</p>';
+      brancheFlou($("#stageVid"));
     } else {
-      host.innerHTML = '<video id="stageVid" controls playsinline src="'+esc(src)+'"></video>';
+      host.innerHTML = '<video id="stageVid" controls playsinline src="'+esc(src)+'" '+
+        'style="filter:blur('+(isMain?S.play.blur:0)+'px)"></video>'+
+        (isMain ? curseurFlou(m) : "");
       const v = $("#stageVid");
+      brancheFlou(v);
       v.volume = VOLUME;
       v.onvolumechange = ()=> setVolume(v.volume);
       v.onloadedmetadata = ()=>{
@@ -1870,6 +1901,19 @@ async function mountMedia(host, m, isMain){
     }
     return;
   }
+  if(m.kind === "audio" && yt){
+    /* Lien YouTube sur une question audio : on garde le lecteur, indispensable
+       à la lecture, mais on le recouvre — c'est un blind test, pas un clip. */
+    host.innerHTML = '<div class="audio-yt">'+
+      '<iframe id="stageVid" allow="autoplay" '+
+      'src="https://www.youtube-nocookie.com/embed/'+esc(yt)+'?rel=0&modestbranding=1&controls=1'+
+      (m.start?"&start="+Math.round(m.start):"")+'"></iframe>'+
+      '<div class="masque"><span>\u266A</span></div></div>'+
+      '<p class="hint">Extrait YouTube — l\'image est masquée, seul le son compte. '+
+      'Lance la lecture d\'un clic à travers le masque si besoin.</p>';
+    return;
+  }
+
   /* audio — lecteur de blind test */
   host.innerHTML =
     '<div class="player">'+
@@ -2152,6 +2196,7 @@ function startTimer(){
   }, 100);
   const b = $("#tStart"); if(b){ b.innerHTML = 'Pause<span class="kbd">espace</span>'; b.className = "btn btn-rose"; }
   syncTimer();
+  if(typeof partieChrono === "function") partieChrono();
 }
 function stopTimer(silent){
   clearInterval(TICK); TICK = null;
@@ -2160,6 +2205,7 @@ function stopTimer(silent){
   if(!silent){
     const b = $("#tStart"); if(b){ b.innerHTML = 'Chrono<span class="kbd">espace</span>'; b.className = "btn btn-outline"; }
     syncTimer();
+    if(typeof partieChrono === "function") partieChrono();
   }
 }
 const toggleTimer = ()=> S.play.running ? stopTimer(false) : startTimer();
@@ -2168,12 +2214,14 @@ function addTime(s){
   S.play.left += s;
   if(S.play.running) S.play.endAt += s*1000;
   syncTimer();
+  if(typeof partieChrono === "function") partieChrono();
 }
 function resetTimer(){
   const it = curItem(); if(!it) return;
   stopTimer(false);
   S.play.left = qTimer(it.q, S.quiz);
   syncTimer();
+  if(typeof partieChrono === "function") partieChrono();
 }
 function beep(){
   try{
@@ -2655,6 +2703,7 @@ function cycleTheme(){
 const PARTIE = {
   branchee:false,       // un serveur répond
   code:"",              // code du salon, cinq lettres
+  cle:"",               // code d'animateur, si le serveur en exige un
   joueurs:[], reponses:[], buzz:[], buzzMode:false, buzzGagnant:null,
   v:-1, derniereQ:null, derniereReveal:null, signatureEquipes:"", echecs:0
 };
@@ -2662,6 +2711,13 @@ const PARTIE = {
 const partieActive = ()=> PARTIE.branchee && !!PARTIE.code;
 
 const SALON_CLE = "regie-quiz:salon";
+const CLE_CLE = "regie-quiz:cle";
+try{ PARTIE.cle = localStorage.getItem(CLE_CLE) || ""; }catch(e){ PARTIE.cle = ""; }
+const enTetes = (base)=>{
+  const h = Object.assign({}, base||{});
+  if(PARTIE.cle) h["X-Regie-Cle"] = PARTIE.cle;
+  return h;
+};
 const avecSalon = p => PARTIE.code
   ? p + (p.indexOf("?") >= 0 ? "&" : "?") + "room=" + encodeURIComponent(PARTIE.code)
   : p;
@@ -2672,11 +2728,38 @@ async function partiePost(chemin, corps){
   if(!PARTIE.branchee) return null;
   try{
     const r = await fetch(avecSalon(chemin), {
-      method:"POST", headers:{"Content-Type":"application/json"},
+      method:"POST", headers:enTetes({"Content-Type":"application/json"}),
       body:JSON.stringify(corps||{})
     });
+    if(r.status === 401){ demandeCle(); return null; }
     return r.ok ? await r.json() : null;
   }catch(e){ return null; }
+}
+
+/* Le serveur peut exiger un code d'animateur. Il n'est demandé qu'une fois,
+   puis gardé dans ce navigateur. Les joueurs, eux, n'en ont pas besoin. */
+let cleDemandee = false;
+function demandeCle(){
+  if(cleDemandee) return;
+  cleDemandee = true;
+  const m = modal('<h2>Code d\'animateur</h2><div class="body">'+
+    '<p class="hint">Ce site demande un code pour ouvrir une partie. '+
+    'Tes joueurs n\'en ont pas besoin : il ne sert qu\'à empêcher un inconnu '+
+    'd\'utiliser ton serveur.</p>'+
+    '<div class="field"><label for="kCle">Code</label>'+
+    '<input type="password" id="kCle" autocomplete="current-password"></div>'+
+    '</div><div class="foot"><button class="btn btn-gold" data-x="ok">Valider</button></div>');
+  const valider = ()=>{
+    const v = (m.root.querySelector("#kCle").value || "").trim();
+    if(!v) return;
+    PARTIE.cle = v;
+    try{ localStorage.setItem(CLE_CLE, v); }catch(e){}
+    m.close(); cleDemandee = false;
+    PARTIE.code = ""; PARTIE.v = -1;
+    partieRafraichit();
+  };
+  m.root.querySelector('[data-x="ok"]').onclick = valider;
+  m.root.querySelector("#kCle").onkeydown = e => { if(e.key==="Enter") valider(); };
 }
 
 /* Envoi d'une question ou d'une révélation, média compris. Le média est le
@@ -2688,6 +2771,12 @@ const MAX_MEDIA = 48 * 1024 * 1024;
 async function partieEnvoi(chemin, charge, m){
   if(!PARTIE.branchee) return null;
   const joindre = !S.quiz || S.quiz.settings.mediasJoueurs !== false;
+  /* Une question porte un média mais le réglage l'empêche de partir : sans
+     avertissement, l'animateur croit simplement que le son est cassé. */
+  if(!joindre && m && m.kind !== "none"){
+    toast("Le média de cette question n'est pas envoyé aux joueurs. "+
+          "Coche « Envoyer les médias aux joueurs » dans les Réglages.", "bad", 7000);
+  }
   let blob = null;
   if(joindre && m && m.kind !== "none"){
     charge.mediaKind = m.kind;
@@ -2712,7 +2801,8 @@ async function partieEnvoi(chemin, charge, m){
     fd.append("payload", JSON.stringify(charge));
     fd.append("media", blob, (m.name || "media") +
       (/\.[a-z0-9]{2,4}$/i.test(m.name||"") ? "" : (EXT_MEDIA[m.kind] || ".bin")));
-    const r = await fetch(avecSalon(chemin), {method:"POST", body:fd});
+    const r = await fetch(avecSalon(chemin), {method:"POST", body:fd, headers:enTetes()});
+    if(r.status === 401){ demandeCle(); return null; }
     if(r.ok) return await r.json();
     toast("Média refusé par le serveur : la question part sans lui.","bad",5000);
     return partiePost(chemin, charge);
@@ -2727,9 +2817,10 @@ async function ouvrirSalon(){
   try{ voulu = localStorage.getItem(SALON_CLE) || ""; }catch(e){}
   try{
     const r = await fetch("/api/room", {
-      method:"POST", headers:{"Content-Type":"application/json"},
+      method:"POST", headers:enTetes({"Content-Type":"application/json"}),
       body: JSON.stringify({code: voulu})
     });
+    if(r.status === 401){ demandeCle(); return false; }
     if(!r.ok) return false;
     const d = await r.json();
     if(d && d.ok){
@@ -2782,7 +2873,9 @@ async function partieBoucle(){
         partieRafraichit();
       }
       const demande = PARTIE.code;
-      const r = await fetch(avecSalon("/api/state?v="+PARTIE.v), {cache:"no-store"});
+      const r = await fetch(avecSalon("/api/state?v="+PARTIE.v),
+                            {cache:"no-store", headers:enTetes()});
+      if(r.status === 401){ demandeCle(); throw new Error("code requis"); }
       if(r.status === 404){ PARTIE.code = ""; throw new Error("salon disparu"); }
       if(!r.ok) throw new Error("état indisponible");
       /* Le salon a pu changer pendant que la requête était en vol : on jette
@@ -2924,6 +3017,7 @@ function partieSync(){
       text:q.text, type:q.type, multi:!!q.multi, buzzMode:!!q.buzzMode,
       mediaHold: !!(q.media && q.media.hidden),
       points:qPoints(q, it.round, S.quiz), timer:qTimer(q, S.quiz),
+      blur: (q.media && q.media.blur) ? S.play.blur : 0,
       choices:q.choices.map(c=>({text:c.text}))
     }, q.media).then(r=>{
       if(!r) toast("La question n'a pas pu être envoyée aux joueurs.","bad",6000);
@@ -2944,6 +3038,26 @@ function partieSync(){
    donc explicitement après chaque validation, pour que les joueurs voient
    leur score bouger tout de suite. */
 const partiePousseEquipes = ()=>{ if(partieActive()) adopteJoueurs(); };
+
+/* Le flou change souvent quand l'animateur fait glisser le curseur : on
+   n'envoie qu'un état toutes les 150 ms, le dernier faisant foi. */
+let flouEnAttente = null, flouMinuteur = null;
+function partieFlou(v){
+  flouEnAttente = v;
+  if(flouMinuteur) return;
+  flouMinuteur = setTimeout(()=>{
+    flouMinuteur = null;
+    partiePost("/api/blur", {value: flouEnAttente});
+  }, 150);
+}
+
+/* Pause, reprise, rallonge : l'etat du chrono part aux joueurs, sinon leur
+   decompte continue de filer alors que le temps est arrete chez toi. */
+function partieChrono(){
+  if(!partieActive() || !S.play) return;
+  partiePost("/api/chrono", { left: Math.max(0, S.play.left||0),
+                              running: !!S.play.running });
+}
 
 const partieFerme      = timeup => partiePost("/api/close", {timeup: !!timeup});
 const partieLanceMedia = ()=> partiePost("/api/mediastart", {});

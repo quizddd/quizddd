@@ -39,7 +39,12 @@ JOUEUR = os.path.join(HERE, "joueur.html")
 PORT = int(os.environ.get("PORT", "8777"))
 HOTE = os.environ.get("HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
 EN_LIGNE = bool(os.environ.get("PORT"))          # vrai chez un hebergeur
-VERSION = "2026-08-30 web-1"
+VERSION = "2026-08-30 web-2"
+
+# Code d'animateur, facultatif. Defini dans les variables d'environnement de
+# l'hebergeur (jamais dans le depot), il verrouille l'ouverture de parties :
+# les joueurs n'en ont pas besoin, seul celui qui anime doit le connaitre.
+CLE_ANIMATEUR = (os.environ.get("CODE_ANIMATEUR") or "").strip()
 
 MEDIA_MAX = 48 * 1024 * 1024     # au-dela, on refuse l'envoi du media
 SALON_MAX = 40                   # parties simultanees
@@ -64,12 +69,17 @@ class Salon:
         self.question = None     # version expurgee, sans la reponse
         self.reponses = {}       # qid -> {pid: {"value", "at", "order"}}
         self.media = None        # {"id", "kind", "name", "type", "data"}
+        self.blur = 0            # flou courant, en pixels, pilote par l'animateur
+        self.media_url = ""      # lien externe (YouTube, mp3 distant...)
+        self.media_url_kind = ""
         self.revele = None       # {"answer", "note", "media_id"}
         self.scores = []         # [{"name", "score"}]
         self.ouverte = False
         self.debut = 0           # horodatage d'affichage, pour caler les videos
         self.media_debut = 0     # 0 = le media attend que l'animateur le lance
         self.fin = 0             # horodatage de fin du chrono, 0 si sans chrono
+        self.duree = 0           # duree totale, pour la barre de progression
+        self.gel = None          # secondes restantes quand l'animateur met en pause
         self.buzz = []
         self.buzz_gagnant = None
         self.buzz_passes = []
@@ -122,9 +132,14 @@ class Salon:
             "canAnswer": bool(peut_repondre),
             "media": ({"id": self.media["id"], "kind": self.media["kind"],
                        "name": self.media["name"]} if self.media else None),
+            "blur": self.blur,
+            "mediaUrl": self.media_url,
+            "mediaUrlKind": self.media_url_kind,
             "startedAt": self.debut,
             "mediaStart": self.media_debut,
             "deadline": self.fin,
+            "duree": self.duree,
+            "gel": self.gel,
             "now": time.time(),
             "mine": (mienne or {}).get("value"),
             "reveal": self.revele,
@@ -172,17 +187,32 @@ def salon_de(request, creer=False):
     return s
 
 
+def anim_ok(request):
+    """Vrai si la requete vient d'un animateur autorise."""
+    if not CLE_ANIMATEUR:
+        return True
+    fournie = (request.headers.get("X-Regie-Cle") or request.query.get("cle") or "").strip()
+    return fournie == CLE_ANIMATEUR
+
+
+def refus():
+    return web.json_response({"ok": False, "error": "cle"}, status=401,
+                             headers={"Cache-Control": "no-store"})
+
+
 def rep(data, status=200):
     return web.json_response(data, status=status, headers={"Cache-Control": "no-store"})
 
 
 # --------------------------------------------------------------- animateur
 async def h_ping(request):
-    return rep({"ok": True, "web": True, "version": VERSION,
+    return rep({"ok": True, "web": True, "version": VERSION, "cle": bool(CLE_ANIMATEUR),
                 "online": EN_LIGNE, "rooms": len(SALONS)})
 
 
 async def h_ouvrir(request):
+    if not anim_ok(request):
+        return refus()
     """La console reclame un salon. Elle peut proposer son ancien code pour le
     reprendre apres un rechargement de page."""
     menage()
@@ -220,6 +250,8 @@ async def lire_corps(request):
 
 
 async def h_question(request):
+    if not anim_ok(request):
+        return refus()
     s = salon_de(request)
     if s is None:
         return rep({"ok": False, "error": "salon inconnu"}, status=404)
@@ -244,12 +276,20 @@ async def h_question(request):
     s.ouverte = True
     s.debut = time.time()
     tim = body.get("timer") or 0
+    s.duree = float(tim or 0)
+    s.gel = None
     s.fin = (s.debut + float(tim)) if tim else 0
     if nouvelle:
         s.buzz = []
         s.buzz_gagnant = None
         s.buzz_passes = []
 
+    try:
+        s.blur = max(0.0, min(60.0, float(body.get("blur") or 0)))
+    except (TypeError, ValueError):
+        s.blur = 0
+    s.media_url = (body.get("mediaUrl") or "").strip()[:500]
+    s.media_url_kind = body.get("mediaKind") or ""
     if media and media["size"] <= MEDIA_MAX:
         s.media = {"id": "m_%d" % int(s.debut * 1000), "kind": body.get("mediaKind") or "",
                    "name": media["name"], "type": media["type"], "data": media["data"]}
@@ -261,7 +301,9 @@ async def h_question(request):
             media["name"], media["size"] / 1048576.0))
     else:
         s.media = None
-        s.media_debut = 0
+        # Un lien externe obeit a la meme regle qu'un fichier importe : il part
+        # tout de suite, sauf si l'animateur a demande a le lancer lui-meme.
+        s.media_debut = 0 if (body.get("mediaHold") or not s.media_url) else s.debut
         if media:
             say("Salon %s - media refuse : %.1f Mo" % (s.code, media["size"] / 1048576.0))
         else:
@@ -271,6 +313,8 @@ async def h_question(request):
 
 
 async def h_stop(request):
+    if not anim_ok(request):
+        return refus()
     """Fin de partie : les joueurs retournent en salle d'attente. On garde les
     joueurs connectes et les scores, on efface seulement la question en cours."""
     s = salon_de(request)
@@ -278,6 +322,8 @@ async def h_stop(request):
         return rep({"ok": False}, status=404)
     s.question = None
     s.media = None
+    s.media_url = ""
+    s.media_url_kind = ""
     s.media_debut = 0
     s.revele = None
     s.ouverte = False
@@ -291,7 +337,45 @@ async def h_stop(request):
     return rep({"ok": True})
 
 
+async def h_chrono(request):
+    """L'animateur met en pause ou rallonge : les joueurs doivent suivre,
+    sinon leur decompte continue de filer alors que le temps est arrete."""
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    try:
+        reste = max(0.0, float(body.get("left") or 0))
+    except (TypeError, ValueError):
+        reste = 0.0
+    if body.get("running"):
+        s.gel = None
+        s.fin = time.time() + reste
+    else:
+        s.gel = reste
+    if reste > s.duree:
+        s.duree = reste          # une rallonge agrandit aussi la barre
+    s.touch()
+    return rep({"ok": True})
+
+
+async def h_blur(request):
+    """L'animateur fait varier le flou : les joueurs suivent en direct."""
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    try:
+        s.blur = max(0.0, min(60.0, float(body.get("value") or 0)))
+    except (TypeError, ValueError):
+        s.blur = 0
+    s.touch()
+    return rep({"ok": True})
+
+
 async def h_mediastart(request):
+    if not anim_ok(request):
+        return refus()
     """L'animateur lance le media : tous les joueurs demarrent a cet instant."""
     s = salon_de(request)
     if s is None:
@@ -303,6 +387,8 @@ async def h_mediastart(request):
 
 
 async def h_close(request):
+    if not anim_ok(request):
+        return refus()
     s = salon_de(request)
     if s is None:
         return rep({"ok": False}, status=404)
@@ -312,6 +398,8 @@ async def h_close(request):
 
 
 async def h_reveal(request):
+    if not anim_ok(request):
+        return refus()
     s = salon_de(request)
     if s is None:
         return rep({"ok": False}, status=404)
@@ -327,6 +415,8 @@ async def h_reveal(request):
 
 
 async def h_scores(request):
+    if not anim_ok(request):
+        return refus()
     s = salon_de(request)
     if s is None:
         return rep({"ok": False}, status=404)
@@ -338,6 +428,8 @@ async def h_scores(request):
 
 
 async def h_teams(request):
+    if not anim_ok(request):
+        return refus()
     """La console renvoie les scores : on les garde pour les afficher aux joueurs."""
     s = salon_de(request)
     if s is None:
@@ -358,6 +450,8 @@ async def h_teams(request):
 
 
 async def h_pass(request):
+    if not anim_ok(request):
+        return refus()
     s = salon_de(request)
     if s is None:
         return rep({"ok": False}, status=404)
@@ -370,6 +464,8 @@ async def h_pass(request):
 
 
 async def h_buzz(request):
+    if not anim_ok(request):
+        return refus()
     """Compatibilite avec la console : ouvrir le buzzer libre."""
     s = salon_de(request)
     if s is None:
@@ -382,6 +478,8 @@ async def h_buzz(request):
 
 
 async def h_state(request):
+    if not anim_ok(request):
+        return refus()
     """Interrogation longue de la console : on ne repond qu'en cas de changement."""
     s = salon_de(request)
     if s is None:
@@ -525,6 +623,8 @@ def build_app():
     r.add_post("/api/question", h_question)
     r.add_post("/api/close", h_close)
     r.add_post("/api/mediastart", h_mediastart)
+    r.add_post("/api/blur", h_blur)
+    r.add_post("/api/chrono", h_chrono)
     r.add_post("/api/stop", h_stop)
     r.add_post("/api/reveal", h_reveal)
     r.add_post("/api/scores", h_scores)

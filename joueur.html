@@ -75,6 +75,10 @@ main{flex:1; min-height:0; display:flex; flex-direction:column; align-items:cent
 }
 .chrono.warn{color:var(--rose); animation:bat .9s ease-in-out infinite}
 .chrono.fini{color:var(--rose)}
+/* Chrono gelé par l'animateur : on le montre, pour que personne ne croie
+   que la page a planté. */
+.chrono.gele{color:var(--gold); animation:none}
+.timer.gele i{background:var(--gold); opacity:.55}
 @keyframes bat{0%,100%{opacity:1}50%{opacity:.4}}
 
 .card{background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--r-l); padding:18px}
@@ -118,8 +122,16 @@ input::placeholder{color:var(--text-3)}
 
 .media{width:100%; display:flex; flex-direction:column; align-items:center; gap:10px}
 .media img{max-width:100%; max-height:46vh; border-radius:var(--r-l); display:block}
-.media video{width:100%; border-radius:var(--r-l); background:#000; aspect-ratio:16/9}
+.media video,.media iframe{width:100%; border-radius:var(--r-l); background:#000;
+  aspect-ratio:16/9; border:0; display:block}
 .media audio{width:100%}
+/* Lien YouTube sur une question audio : le lecteur reste, mais couvert. */
+.audio-yt{position:relative; width:100%; height:130px; border-radius:var(--r-l);
+  overflow:hidden; background:var(--surface)}
+.audio-yt iframe{position:absolute; inset:0; width:100%; height:100%; border:0}
+.audio-yt .masque{position:absolute; inset:0; display:grid; place-items:center;
+  background:var(--surface); color:var(--gold); font-size:2.4rem}
+.media img,.media video,.media iframe{transition:filter .45s ease}
 .media .done{
   width:100%; padding:34px 16px; text-align:center; color:var(--text-3);
   border:1px dashed var(--line); border-radius:var(--r-l); background:var(--surface);
@@ -195,6 +207,7 @@ if(params.get("c")) ME.code = params.get("c").toUpperCase();
 
 /* ------------------------------------------------ écran d'entrée */
 function vueEntree(erreur){
+  couperMedia();
   MAIN.innerHTML =
     '<div class="centre">'+
       '<div class="gros">Rejoindre la partie</div>'+
@@ -262,6 +275,33 @@ function majBandeau(coupe){
     : "";
 }
 
+/* ------------------------------------------------ media : arret franc */
+let SIG_MEDIA = null;
+
+/* Ce qui identifie le media affiche. Tant que ca ne bouge pas, le lecteur
+   en place est le bon et on le laisse tranquille. */
+function signatureMedia(){
+  const d = ETAT;
+  if(!d || (!d.media && !d.mediaUrl)) return null;
+  return JSON.stringify([d.media && d.media.id, d.mediaUrl || "",
+                         d.mediaStart || 0,
+                         d.media ? d.media.kind : (d.mediaUrlKind || "")]);
+}
+
+/* Retirer un <audio> du DOM ne l'arrete pas : il continue de jouer dans le
+   vide. Il faut le mettre en pause et lui enlever sa source a la main. */
+function couperMedia(){
+  const hote = $("#media");
+  SIG_MEDIA = null;
+  if(!hote) return;
+  hote.querySelectorAll("video,audio").forEach(el=>{
+    try{ el.pause(); el.removeAttribute("src"); el.load(); }catch(e){}
+  });
+  hote.querySelectorAll("iframe").forEach(f=>{
+    try{ f.src = "about:blank"; }catch(e){}
+  });
+}
+
 /* ------------------------------------------------ rendu */
 function dessiner(){
   majBandeau(false);
@@ -269,13 +309,20 @@ function dessiner(){
   const q = d.question;
   const cle = JSON.stringify([q && q.id, d.open, d.mine, d.reveal, d.canBuzz,
                               d.buzzWinner, d.media && d.media.id, d.mediaStart>0,
-                              d.scores.length]);
+                              d.mediaUrl, d.scores.length]);
   if(cle !== VU){ VU = cle; construire(); }
   majChrono();
+  appliqueFlou();
 }
 
 function construire(){
   const d = ETAT, q = d.question;
+  /* Le media survit au re-rendu tant qu'il s'agit du meme extrait : sinon
+     la musique repartirait du debut des qu'un joueur envoie sa reponse. */
+  const sig = signatureMedia();
+  const ancien = $("#media");
+  const garde = (ancien && sig && sig === SIG_MEDIA) ? ancien : null;
+  if(!garde) couperMedia();
   if(!q){
     MAIN.innerHTML =
       '<div class="centre"><div class="gros">Tu es dans la partie</div>'+
@@ -291,7 +338,7 @@ function construire(){
           'Question '+q.index+'/'+q.total+
           (q.points!=null ? ' · '+q.points+' pt'+(Math.abs(q.points)>1?'s':'') : '')+'</div>';
 
-  if(d.media) h += '<div class="media" id="media"></div>';
+  if(d.media || d.mediaUrl) h += '<div class="media" id="media"></div>';
   if(q.text)  h += '<h2 class="qtext">'+esc(q.text)+'</h2>';
 
   if(d.reveal){
@@ -302,7 +349,7 @@ function construire(){
     h += '<p class="note">L\'animateur attribue les points.</p>';
   } else if(q.buzzMode && !d.mine){
     if(d.buzzWinner && d.buzzWinner !== d.me){
-      h += '<p class="etat no"><b>'+esc(d.buzzWinner)+'</b> a buzzé — à lui de répondre.</p>';
+      h += '<p class="etat no"><b>'+esc(d.buzzWinner)+'</b> a buzzé et prend la main.</p>';
     } else if(d.canBuzz){
       h += '<button class="btn btn-rose btn-lg" id="buzz" style="font-size:1.4rem;padding:26px">🔔 BUZZ</button>';
     } else if(d.buzzWinner === d.me){
@@ -319,10 +366,17 @@ function construire(){
 
   h += classement(false);
   MAIN.innerHTML = h;
+  if(garde){
+    const neuf = $("#media");
+    if(neuf) neuf.replaceWith(garde);   /* on remet le lecteur qui jouait */
+  }
 
   if($("#buzz")) $("#buzz").onclick = buzzer;
   brancherReponse();
-  if(d.media) monterMedia();
+  if(d.media || d.mediaUrl){
+    if(!garde){ SIG_MEDIA = sig; monterMedia(); }
+    appliqueFlou();
+  }
 }
 
 function zoneReponse(){
@@ -405,7 +459,8 @@ const mmss = s => { s = Math.max(0, Math.ceil(s)); return Math.floor(s/60)+":"+S
 
 function majChrono(){
   const bar = $("#timer"), fill = $("#timerFill"), num = $("#chrono"), d = ETAT;
-  if(!d || !d.deadline || !d.open){
+  const gele = !!d && d.gel !== null && d.gel !== undefined;
+  if(!d || !d.open || (!d.deadline && !gele)){
     bar.hidden = true;
     num.hidden = true;
     clearInterval(TIC);
@@ -414,14 +469,21 @@ function majChrono(){
   bar.hidden = false;
   num.hidden = false;
   clearInterval(TIC);
-  const total = Math.max(1, d.deadline - d.startedAt);
-  const battre = ()=>{
-    const reste = Math.max(0, d.deadline*1000 - (Date.now()+DERIVE)) / 1000;
+  const total = Math.max(1, d.duree || (d.deadline - d.startedAt));
+  const peindre = reste => {
     fill.style.width = Math.max(0, Math.min(100, reste/total*100))+"%";
     num.textContent = mmss(reste);
-    bar.classList.toggle("warn", reste <= 5);
-    num.classList.toggle("warn", reste <= 5 && reste > 0);
-    num.classList.toggle("fini", reste <= 0);
+    bar.classList.toggle("warn", reste <= 5 && !gele);
+    bar.classList.toggle("gele", gele);
+    num.classList.toggle("warn", reste <= 5 && reste > 0 && !gele);
+    num.classList.toggle("fini", reste <= 0 && !gele);
+    num.classList.toggle("gele", gele);
+  };
+  /* Temps gelé : plus de décompte, on affiche la valeur figée telle quelle. */
+  if(gele){ peindre(d.gel); return; }
+  const battre = ()=>{
+    const reste = Math.max(0, d.deadline*1000 - (Date.now()+DERIVE)) / 1000;
+    peindre(reste);
     if(reste <= 0) clearInterval(TIC);
   };
   battre();
@@ -429,19 +491,77 @@ function majChrono(){
 }
 
 /* ------------------------------------------------ médias synchronisés */
+/* Identifiant d'une vidéo YouTube, quelle que soit la forme du lien. */
+function ytId(u){
+  const r = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/.exec(u||"");
+  return r ? r[1] : null;
+}
+
+/* Le flou change souvent : on le pose sur les éléments déjà en place plutôt
+   que de reconstruire le média, ce qui relancerait la lecture depuis le début. */
+function appliqueFlou(){
+  const v = (ETAT && ETAT.blur) || 0;
+  const filtre = v ? "blur("+v+"px)" : "";
+  ["#media img", "#media video", "#media iframe"].forEach(sel=>{
+    const el = document.querySelector(sel);
+    if(el && el.style.filter !== filtre) el.style.filter = filtre;
+  });
+}
+
 function monterMedia(){
   const hote = $("#media"), d = ETAT, m = d.media;
-  if(!hote || !m) return;
+  if(!hote || (!m && !d.mediaUrl)) return;
+  const genre = m ? m.kind : (d.mediaUrlKind || "");
   /* Tant que l'animateur n'a pas lancé, personne ne démarre : c'est ce qui
      garantit que tout le monde voit et entend la même chose au même moment. */
   if(!d.mediaStart){
     hote.innerHTML = "<div class=\"done pulse\">L’animateur va lancer " +
-      (m.kind === "video" ? "la vidéo" : m.kind === "audio" ? "l’extrait" : "le média") +
+      (genre === "video" ? "la vidéo" : genre === "audio" ? "l’extrait" : "le média") +
       "…</div>";
     return;
   }
-  const src = "/api/media?room="+encodeURIComponent(ME.code)+"&id="+encodeURIComponent(m.id);
   const decalage = Math.max(0, (Date.now()+DERIVE)/1000 - d.mediaStart);
+
+  /* Lien externe : l'animateur a collé une adresse plutôt qu'importé un
+     fichier. On démarre là où il en est, mais le navigateur du joueur peut
+     exiger un geste avant de lancer le son. */
+  if(!m && d.mediaUrl){
+    const yt = ytId(d.mediaUrl);
+    if(yt && genre === "audio"){
+      /* C'est un blind test : on garde le lecteur, indispensable au son,
+         mais on le recouvre pour ne pas montrer le clip. */
+      hote.innerHTML = '<div class="audio-yt">'+
+        '<iframe allow="autoplay; encrypted-media" '+
+        'src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(yt)+
+        '?autoplay=1&start='+Math.floor(decalage)+'&controls=1&rel=0&modestbranding=1"></iframe>'+
+        '<div class="masque"><span>♪</span></div></div>'+
+        '<div class="note">Si le son ne démarre pas, touche le cadre une fois.</div>';
+      return;
+    }
+    if(yt){
+      hote.innerHTML = '<iframe allow="autoplay; encrypted-media; fullscreen" allowfullscreen '+
+        'src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(yt)+
+        '?autoplay=1&start='+Math.floor(decalage)+'&controls=0&rel=0&modestbranding=1&disablekb=1"></iframe>'+
+        '<div class="note">Si rien ne démarre, touche la vidéo une fois.</div>';
+      return;
+    }
+    if(genre === "image"){
+      hote.innerHTML = '<img alt="Image de la question" src="'+esc(d.mediaUrl)+'">';
+      return;
+    }
+    const balise = genre === "video" ? "video" : "audio";
+    hote.innerHTML = '<'+balise+' id="ext" playsinline preload="auto" src="'+esc(d.mediaUrl)+'"></'+balise+'>'+
+      '<div class="note" id="extNote">Lecture en cours…</div>';
+    const el = $("#ext");
+    el.onloadedmetadata = ()=>{
+      if(decalage > 0 && decalage < (el.duration||1e9)) el.currentTime = decalage;
+      lancer(el, hote);
+    };
+    el.onerror = ()=>{ const n = $("#extNote"); if(n) n.textContent = "Média indisponible depuis ce lien."; };
+    return;
+  }
+
+  const src = "/api/media?room="+encodeURIComponent(ME.code)+"&id="+encodeURIComponent(m.id);
 
   if(m.kind === "image"){
     hote.innerHTML = '<img alt="Image de la question" src="'+src+'">';
