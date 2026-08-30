@@ -90,9 +90,7 @@ class Salon:
         lignes.sort(key=lambda r: r["order"])
         return {
             "v": self.version,
-            "discord": {"ready": True, "guild": "Salon " + self.code,
-                        "channel": self.code, "bound": True, "demo": False,
-                        "web": True, "code": self.code},
+            "salon": {"code": self.code, "web": True},
             "players": [{"userId": p, "name": j["name"], "teamId": j.get("team_id")}
                         for p, j in self.joueurs.items()],
             "question": ({"id": self.question["id"], "open": self.ouverte}

@@ -801,7 +801,7 @@ const newRound = t => ({ id:uid("r"), title:t||"Manche 1", coef:1, questions:[ne
 function newQuiz(){
   return {
     id:uid("qz"), title:"Nouveau quiz", desc:"", createdAt:Date.now(), updatedAt:Date.now(),
-    settings:{ defaultPoints:1, defaultTimer:30, autoStart:true, beep:true, buzzer:true, peek:true, discordMedia:true, speedBonus:0 },
+    settings:{ defaultPoints:1, defaultTimer:30, autoStart:true, beep:true, buzzer:true, peek:true, mediasJoueurs:true, speedBonus:0 },
     rounds:[newRound()], teams:[], log:[], version:1
   };
 }
@@ -812,7 +812,11 @@ function newTeam(quiz){
 
 /* Migration douce : tout quiz importé ou ancien reçoit les champs manquants. */
 function normalize(q){
-  q.settings = Object.assign({defaultPoints:1,defaultTimer:30,autoStart:true,beep:true,buzzer:true,peek:true,discordMedia:true,speedBonus:0}, q.settings||{});
+  q.settings = Object.assign({defaultPoints:1,defaultTimer:30,autoStart:true,beep:true,buzzer:true,peek:true,mediasJoueurs:true,speedBonus:0}, q.settings||{});
+  /* Ancien nom du réglage, du temps où les médias partaient dans Discord. */
+  if(q.settings.discordMedia !== undefined && q.settings.mediasJoueurs === undefined)
+    q.settings.mediasJoueurs = q.settings.discordMedia;
+  delete q.settings.discordMedia;
   q.teams = q.teams||[]; q.log = q.log||[]; q.rounds = q.rounds && q.rounds.length ? q.rounds : [newRound()];
   q.rounds.forEach(r=>{
     r.id=r.id||uid("r"); r.coef=nb(r.coef,1); r.questions=r.questions||[];
@@ -1211,7 +1215,7 @@ function renderQForm(){
     '<hr class="rule">'+
     '<label class="switch" style="align-items:flex-start"><input type="checkbox" id="fBuzz"'+(q.buzzMode?" checked":"")+'>'+
     '<span class="track" style="margin-top:2px"></span><span class="txt"><strong>Question au buzzer</strong>'+
-    '<br><span class="hint">Dans Discord, un seul bouton BUZZ. Le premier qui clique est le seul à pouvoir répondre — '+
+    '<br><span class="hint">Les joueurs ne voient qu\'un bouton BUZZ. Le premier qui clique est le seul à pouvoir répondre — '+
     'les autres sont bloqués jusqu\'à ce que tu rendes la main.</span></span></label>'+
   '</div>'+
 
@@ -1546,8 +1550,6 @@ function viewScores(){
       '<div><div class="eyebrow">'+esc(quiz.title)+'</div><h1>Scores</h1>'+
       '<p class="sub">Tu peux corriger n\'importe quel point à tout moment, même après coup. Chaque geste est tracé dans le journal.</p></div>'+
       '<div class="btn-row">'+
-        (typeof discordLive==="function" && discordLive()
-          ? '<button class="btn btn-outline" id="postRank">Publier dans Discord</button>' : "")+
         '<button class="btn btn-ghost" id="copyRank">Copier le classement</button>'+
         '<button class="btn btn-danger" id="resetScores">Remettre à zéro</button>'+
       '</div>'+
@@ -1575,7 +1577,6 @@ function viewScores(){
     if(!await confirmBox("Remettre les scores à zéro ?", "Les "+plural(quiz.log.length,"ligne")+" du journal seront effacées. Les questions et les équipes sont conservées.","Tout effacer",true)) return;
     quiz.log = []; touch(); render(); toast("Scores remis à zéro.","good");
   };
-  if($("#postRank")) $("#postRank").onclick = discordPostScores;
   if($("#copyRank")) $("#copyRank").onclick = ()=>{
     const txt = quiz.title+"\n"+rk.map((r,i)=>(i+1)+". "+r.team.name+" — "+ptsTxt(r.score)).join("\n");
     copyText(txt, "Classement copié.");
@@ -1587,18 +1588,20 @@ function adjust(teamId, delta, reason, qKey){
   if(!delta) return;
   S.quiz.log.push({ id:uid("l"), teamId:teamId, delta:delta, reason:reason||"Ajustement", qKey:qKey||null, kind:qKey?"award":"adjust", ts:Date.now() });
   touch();
+  if(typeof partiePousseEquipes === "function") partiePousseEquipes();
 }
 function setAward(teamId, qKey, delta, reason, verdict, ordre){
   S.quiz.log = S.quiz.log.filter(e=> !(e.kind==="award" && e.qKey===qKey && e.teamId===teamId));
   if(delta !== null) S.quiz.log.push({ id:uid("l"), teamId:teamId, delta:delta, reason:reason,
     qKey:qKey, kind:"award", verdict:verdict, ordre:ordre||0, ts:Date.now() });
   touch();
+  if(typeof partiePousseEquipes === "function") partiePousseEquipes();
 }
 
 /* Bonus de rapidité : il revient à la première équipe, dans l'ordre d'arrivée
    des réponses, que l'animateur a validée « juste ». Recalculé à chaque
-   validation, donc il suit tes changements d'avis. Sans Discord il n'y a pas
-   d'ordre d'arrivée connu, donc pas de bonus. */
+   validation, donc il suit tes changements d'avis. Hors partie en ligne il n'y a
+   pas d'ordre d'arrivée connu, donc pas de bonus. */
 const fmtDec = n => String(n).replace(".", ",");
 const speedBonusFor = (quiz, teamId, qKey)=>
   quiz.log.find(e=> e.kind==="speed" && e.qKey===qKey && e.teamId===teamId) || null;
@@ -1619,7 +1622,7 @@ function applySpeedBonus(qKey){
       change = true;
     }
   }
-  if(change) touch();
+  if(change){ touch(); if(typeof partiePousseEquipes === "function") partiePousseEquipes(); }
 }
 const awardOf = (quiz,teamId,qKey)=> quiz.log.find(e=> e.kind==="award" && e.qKey===qKey && e.teamId===teamId) || null;
 
@@ -1718,11 +1721,10 @@ function viewPlay(){
           : '<span class="pill">sans chrono</span>')+
         '<span class="spacer"></span>'+
         (quiz.settings.peek && p.phase==="question" ? '<button class="btn btn-ghost" id="tPeek">Aperçu réponse</button>' : "")+
-        (typeof DISCORD!=="undefined" && DISCORD.buzzMode && DISCORD.buzzWinner
+        (typeof PARTIE!=="undefined" && PARTIE.buzzMode && PARTIE.buzzGagnant
           ? '<button class="btn btn-rose" id="tPass">Rendre la main</button>' : "")+
-        (typeof discordLive==="function" && discordLive()
-          ? '<span class="pill" id="dCount"></span>'+
-            '<button class="btn btn-ghost" id="tBuzz" title="Ouvrir le buzzer dans Discord">🔔</button>' : "")+
+        (typeof partieActive==="function" && partieActive()
+          ? '<span class="pill" id="dCount"></span>' : "")+
         (p.phase==="question"
           ? '<button class="btn btn-gold" id="tReveal">Révéler la réponse<span class="kbd">R</span></button>'
           : '<button class="btn btn-outline" id="tHide">Masquer</button>')+
@@ -1745,20 +1747,19 @@ function viewPlay(){
   if($("#tReveal"))$("#tReveal").onclick= reveal;
   if($("#tHide"))  $("#tHide").onclick  = ()=>{ p.phase="question"; viewPlay(); };
   if($("#tPeek"))  $("#tPeek").onclick  = togglePeek;
-  if($("#tBuzz"))  $("#tBuzz").onclick  = discordOpenBuzz;
-  if($("#tPass"))  $("#tPass").onclick  = discordPassHand;
+  if($("#tPass"))  $("#tPass").onclick  = partieRendLaMain;
   if($("#tStop"))  $("#tStop").onclick  = arreterPartie;
 
   const cons = $("#console");
   if(cons) document.documentElement.style.setProperty("--console-h", cons.offsetHeight+"px");
-  if(typeof discordSync === "function") discordSync();
+  if(typeof partieSync === "function") partieSync();
 }
 
 /* Qui a la main, affiché en grand pour la salle. */
 function renderBuzzBanner(){
   const b = $("#buzzBanner");
   if(!b) return;
-  const gagnant = (typeof DISCORD !== "undefined" && DISCORD.buzzMode) ? DISCORD.buzzWinner : null;
+  const gagnant = (typeof PARTIE !== "undefined" && PARTIE.buzzMode) ? PARTIE.buzzGagnant : null;
   b.hidden = !gagnant;
   if(gagnant){
     b.innerHTML = '<span class="bz" aria-hidden="true">\uD83D\uDD14</span>'+
@@ -1817,7 +1818,7 @@ async function renderStage(){
 
   if($("#showMedia")) $("#showMedia").onclick = ()=>{
     S.play.shown = true;
-    if(typeof discordMediaStart === "function") discordMediaStart();
+    if(typeof partieLanceMedia === "function") partieLanceMedia();
     renderStage();
   };
   if($("#mstage") && !hideIt) await mountMedia($("#mstage"), q.media, true);
@@ -2018,7 +2019,7 @@ function renderRail2(){
       (bz>=0 ? '<span class="buzz-badge">'+(bz+1)+'</span>' : "")+
       '<div class="thd"><span class="tname">'+esc(t.name)+'</span>'+
       '<span class="tscore num" data-sc="'+t.id+'">'+teamScore(quiz,t.id)+'</span></div>'+
-      (typeof discordAnswerHTML==="function" ? discordAnswerHTML(t.id) : "")+
+      (typeof reponseHTML==="function" ? reponseHTML(t.id) : "")+
       (typeof speedBonusFor==="function" && speedBonusFor(quiz, t.id, it.q.id)
         ? '<div class="tbonus">\u26A1 +'+fmtDec(speedBonusFor(quiz,t.id,it.q.id).delta)+' rapidité</div>' : "")+
       '<div class="award">'+
@@ -2040,7 +2041,7 @@ function renderRail2(){
     if(aw && aw.verdict === kind){ setAward(tid, it.q.id, null); }
     else {
       const d = kind==="zero" ? 0 : kind==="half" ? half : pts;
-      const rep = (typeof discordAnswerFor === "function") ? discordAnswerFor(tid) : null;
+      const rep = (typeof reponseDe === "function") ? reponseDe(tid) : null;
       setAward(tid, it.q.id, d, label, kind, rep ? rep.order : 0);
       flashScore(tid);
     }
@@ -2091,7 +2092,7 @@ function togglePeek(){
    revient au classement. Les points sont conservés, et la prochaine fois
    l'animation repartira de la première question. */
 async function arreterPartie(){
-  const enCours = typeof discordLive === "function" && discordLive();
+  const enCours = typeof partieActive === "function" && partieActive();
   if(!await confirmBox("Arrêter la partie ?",
       enCours
         ? "Les joueurs retourneront en salle d'attente. Les points sont conservés, "+
@@ -2100,8 +2101,8 @@ async function arreterPartie(){
       "Arrêter", true)) return;
   stopTimer(true);
   stopMedia();
-  if(typeof discordStop === "function") await discordStop();
-  if(typeof DISCORD !== "undefined"){ DISCORD.lastQ = null; DISCORD.lastReveal = null; }
+  if(typeof partieArret === "function") await partieArret();
+  if(typeof PARTIE !== "undefined"){ PARTIE.derniereQ = null; PARTIE.derniereReveal = null; }
   S.play = null;
   setView("scores");
   toast("Partie arrêtée.","good");
@@ -2144,7 +2145,7 @@ function startTimer(){
       clearInterval(TICK); TICK = null;
       S.play.running = false; S.play.left = 0;
       if(S.quiz.settings.beep) beep();
-      if(typeof discordClose === "function") discordClose(true);
+      if(typeof partieFerme === "function") partieFerme(true);
       const b = $("#tStart"); if(b){ b.textContent = "Chrono"; b.className = "btn btn-outline"; }
       syncTimer();
     }
@@ -2247,16 +2248,16 @@ function settingsDialog(){
       '<input type="number" id="sBonus" min="0" max="20" step="0.5" value="'+nb(s.speedBonus,0)+'">'+
       '<span class="hint">Points ajoutés à la première équipe, dans l\'ordre d\'arrivée des réponses, '+
       'que tu valides « juste ». <strong>0 désactive le bonus.</strong> Il se recalcule si tu changes d\'avis, '+
-      'et demande Discord pour connaître l\'ordre.</span></div>'+
+      'et il a besoin que les joueurs répondent en ligne, pour connaître l\'ordre d\'arrivée.</span></div>'+
     '<hr class="rule">'+
     '<div style="display:flex;flex-direction:column;gap:14px">'+
       sw("sAuto","Lancer le chrono automatiquement","autoStart" in s ? s.autoStart : true,"Dès l\'affichage d\'une nouvelle question.")+
       sw("sBeep","Sonnerie de fin de temps",s.beep,"Trois notes quand le chrono atteint zéro.")+
       sw("sBuzz","Buzzer au clavier",s.buzzer,"Pendant une question, les touches 1 à 9 enregistrent l\'ordre de buzz des équipes. Retour arrière efface.")+
       sw("sPeek","Bouton « aperçu réponse »",s.peek,"Affiche discrètement la réponse dans un coin, six secondes, sans la révéler à la salle. À laisser décoché si tu partages ton écran.")+
-      (typeof discordLive==="function" && discordLive()
-        ? sw("sDMedia","Joindre les médias aux messages Discord", s.discordMedia !== false,
-             "Laisse coché si personne ne voit ton écran : c'est le seul moyen pour eux d'entendre l'extrait ou de voir l'image. Décoche si tu partages ton écran — c'est alors toi qui lances la musique, en même temps pour tout le monde.")
+      (typeof partieActive==="function" && partieActive()
+        ? sw("sDMedia","Envoyer les médias aux joueurs", s.mediasJoueurs !== false,
+             "Chaque joueur voit l'image et entend l'extrait sur son propre écran, au même instant que les autres. Décoche seulement si tu préfères diffuser toi-même, par un partage d'écran.")
         : "")+
     '</div>'+
   '</div><div class="foot"><button class="btn btn-gold" data-x="ok">Terminé</button></div>');
@@ -2269,7 +2270,7 @@ function settingsDialog(){
   bind("sBeep",t => s.beep = t.checked);
   bind("sBuzz",t => s.buzzer = t.checked);
   bind("sPeek",t => s.peek = t.checked);
-  if(m.root.querySelector("#sDMedia")) bind("sDMedia", t => s.discordMedia = t.checked);
+  if(m.root.querySelector("#sDMedia")) bind("sDMedia", t => s.mediasJoueurs = t.checked);
   m.root.querySelector('[data-x="ok"]').onclick = ()=>{ m.close(); renderQForm(); renderRail(); };
 }
 
@@ -2604,12 +2605,12 @@ function cycleTheme(){
 </script>
 <style>
 /* ============================================================
-   PONT DISCORD — pastille d'état et réponses reçues
+   PARTIE EN LIGNE — pastille du salon et réponses reçues
    ============================================================ */
 .dpill{
   display:inline-flex; align-items:center; gap:7px; padding:4px 11px; border-radius:999px;
   font-family:var(--f-display); font-size:.76rem; font-weight:600; letter-spacing:.1em;
-  text-transform:uppercase; white-space:nowrap;
+  text-transform:uppercase; white-space:nowrap; cursor:pointer;
   background:var(--surface-2); color:var(--text-3); border:1px solid var(--line-soft);
 }
 .dpill i{width:7px; height:7px; border-radius:50%; background:var(--text-3); flex:none}
@@ -2632,332 +2633,340 @@ function cycleTheme(){
   font-family:var(--f-display); font-size:.76rem; font-weight:600; letter-spacing:.06em;
   text-transform:uppercase; color:var(--gold-text); text-align:center; padding:1px 0;
 }
+.code-salon{
+  font-family:var(--f-display); font-size:2.6rem; font-weight:700; letter-spacing:.28em;
+  text-align:center; background:var(--surface-2); border-radius:var(--r-m); padding:12px 0 12px .28em;
+}
 </style>
 <script>
 "use strict";
 
 /* ============================================================
-   19. PONT DISCORD
-   Le bot sert cette page et expose une petite API sur la même
-   adresse. S'il n'est pas là (fichier ouvert en direct, ou
-   version publiée en ligne), tout ce bloc reste silencieux.
+   19. LA PARTIE EN LIGNE
+
+   Cette console pilote une partie hébergée par regie-serveur.py.
+   Le quiz reste dans ce navigateur ; le serveur ne relaie que la
+   partie en cours vers la page des joueurs.
+
+   Sans serveur en face — fichier ouvert en direct, ou version
+   publiée en ligne — tout ce bloc reste silencieux et l'appli
+   fonctionne comme un pupitre hors ligne.
    ============================================================ */
-const DISCORD = {
-  on:false, ready:false, bound:false, demo:false, web:false, code:"", guild:null, channel:null,
-  players:[], answers:[], buzz:[], buzzOpen:false, buzzMode:false, buzzWinner:null,
-  v:-1, lastQ:null, lastReveal:null, lastTeams:"", fails:0
+const PARTIE = {
+  branchee:false,       // un serveur répond
+  code:"",              // code du salon, cinq lettres
+  joueurs:[], reponses:[], buzz:[], buzzMode:false, buzzGagnant:null,
+  v:-1, derniereQ:null, derniereReveal:null, signatureEquipes:"", echecs:0
 };
 
-/* « en service » = le pont repond ET il y a de vrais joueurs derriere,
-   ce qui est aussi le cas du mode demo. */
-const discordLive = ()=> DISCORD.on && (DISCORD.bound || DISCORD.demo || !!DISCORD.code);
+const partieActive = ()=> PARTIE.branchee && !!PARTIE.code;
 
-/* Toutes les requêtes portent le code du salon : un même serveur peut ainsi
-   héberger plusieurs parties en même temps sans qu'elles se mélangent. */
-const ROOM_KEY = "regie-quiz:salon";
-function withRoom(p){
-  if(!DISCORD.code) return p;
-  return p + (p.indexOf("?") >= 0 ? "&" : "?") + "room=" + encodeURIComponent(DISCORD.code);
-}
-const lienJoueur = ()=> location.origin + "/jouer?c=" + encodeURIComponent(DISCORD.code);
+const SALON_CLE = "regie-quiz:salon";
+const avecSalon = p => PARTIE.code
+  ? p + (p.indexOf("?") >= 0 ? "&" : "?") + "room=" + encodeURIComponent(PARTIE.code)
+  : p;
+const lienJoueur = ()=> location.origin + "/jouer?c=" + encodeURIComponent(PARTIE.code);
 
-async function ouvrirSalon(){
-  let voulu = "";
-  try{ voulu = localStorage.getItem(ROOM_KEY) || ""; }catch(e){}
+/* ------------------------------------------------------------ échanges */
+async function partiePost(chemin, corps){
+  if(!PARTIE.branchee) return null;
   try{
-    const r = await fetch("/api/room", {
+    const r = await fetch(avecSalon(chemin), {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({code: voulu})
-    });
-    const d = await r.json();
-    if(d && d.ok){
-      DISCORD.code = d.code;
-      try{ localStorage.setItem(ROOM_KEY, d.code); }catch(e){}
-    }
-  }catch(e){}
-}
-
-async function discordPost(path, body){
-  if(!DISCORD.on) return null;
-  try{
-    const r = await fetch(withRoom(path), {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(body||{})
+      body:JSON.stringify(corps||{})
     });
     return r.ok ? await r.json() : null;
   }catch(e){ return null; }
 }
 
-/* — Envoi d'une question ou d'une réponse, média compris —
-   Sans partage d'écran, la pièce jointe est le seul moyen pour les joueurs
-   de voir l'image ou d'entendre l'extrait : on la pousse avec le message. */
-const MEDIA_EXT = {image:".png", audio:".mp3", video:".mp4"};
+/* Envoi d'une question ou d'une révélation, média compris. Le média est le
+   seul moyen pour les joueurs de voir l'image ou d'entendre l'extrait sur
+   leur propre écran, donc il part avec le message. */
+const EXT_MEDIA = {image:".png", audio:".mp3", video:".mp4"};
+const MAX_MEDIA = 48 * 1024 * 1024;
 
-async function discordSendWithMedia(path, payload, m){
-  if(!DISCORD.on) return null;
-  /* En partage d'ecran, l'animateur lance le media lui-meme : l'envoyer aussi
-     dans Discord permettrait de prendre de l'avance sur l'extrait. */
-  const joindre = !S.quiz || S.quiz.settings.discordMedia !== false;
-  const MAX_DISCORD = 10 * 1024 * 1024;
+async function partieEnvoi(chemin, charge, m){
+  if(!PARTIE.branchee) return null;
+  const joindre = !S.quiz || S.quiz.settings.mediasJoueurs !== false;
   let blob = null;
   if(joindre && m && m.kind !== "none"){
-    payload.mediaKind = m.kind;
+    charge.mediaKind = m.kind;
     if(m.assetId){
       try{
         const rec = await getAsset(m.assetId);
         if(rec && rec.blob){
-          if(rec.blob.size > MAX_DISCORD){
-            /* inutile de televerser : Discord le refusera de toute facon */
-            toast("Média de "+Math.round(rec.blob.size/1048576)+" Mo : trop lourd pour Discord "+
-                  "(10 Mo max). La question part sans lui.","bad",6000);
+          if(rec.blob.size > MAX_MEDIA){
+            toast("Média de "+Math.round(rec.blob.size/1048576)+" Mo : trop lourd pour être envoyé. "+
+                  "La question part sans lui.","bad",6000);
           } else blob = rec.blob;
         }
       }catch(e){ toast("Média illisible : la question part sans lui.","bad",5000); }
     } else if(m.url){
-      payload.mediaUrl = m.url;
+      charge.mediaUrl = m.url;
     }
   }
-  if(!blob) return discordPost(path, payload);
+  if(!blob) return partiePost(chemin, charge);
+
   try{
     const fd = new FormData();
-    fd.append("payload", JSON.stringify(payload));
-    fd.append("media", blob, (m.name || "media") + (/\.[a-z0-9]{2,4}$/i.test(m.name||"") ? "" : (MEDIA_EXT[m.kind] || ".bin")));
-    const r = await fetch(withRoom(path), {method:"POST", body:fd});
+    fd.append("payload", JSON.stringify(charge));
+    fd.append("media", blob, (m.name || "media") +
+      (/\.[a-z0-9]{2,4}$/i.test(m.name||"") ? "" : (EXT_MEDIA[m.kind] || ".bin")));
+    const r = await fetch(avecSalon(chemin), {method:"POST", body:fd});
     if(r.ok) return await r.json();
-    /* Refus du serveur (fichier trop lourd, par exemple) : la question doit
-       partir malgre tout, sans son media. Mieux vaut une question sans extrait
-       qu'une question qui n'arrive jamais. */
-    toast("Média trop lourd pour être envoyé : la question part sans lui.","bad",5000);
-    return discordPost(path, payload);
+    toast("Média refusé par le serveur : la question part sans lui.","bad",5000);
+    return partiePost(chemin, charge);
   }catch(e){
-    /* coupure ou erreur reseau : meme repli */
-    return discordPost(path, payload);
+    return partiePost(chemin, charge);   /* coupure : la question part quand même */
   }
 }
 
-/* — Découverte du pont au démarrage — */
-async function discordDetect(){
+/* ------------------------------------------------------------ le salon */
+async function ouvrirSalon(){
+  let voulu = "";
+  try{ voulu = localStorage.getItem(SALON_CLE) || ""; }catch(e){}
   try{
-    const r = await fetch("/api/ping", {cache:"no-store"});
+    const r = await fetch("/api/room", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({code: voulu})
+    });
     if(!r.ok) return false;
     const d = await r.json();
-    DISCORD.on = true; DISCORD.demo = !!d.demo; DISCORD.web = !!d.web;
-    if(DISCORD.web) await ouvrirSalon();
-    discordMountPill();
-    discordLoop();
-    return true;
-  }catch(e){ return false; }
+    if(d && d.ok){
+      PARTIE.code = d.code;
+      try{ localStorage.setItem(SALON_CLE, d.code); }catch(e){}
+      return true;
+    }
+  }catch(e){}
+  return false;
 }
 
-/* — Boucle d'écoute : le serveur ne répond que quand quelque chose bouge — */
-async function discordLoop(){
-  while(DISCORD.on){
+/* ------------------------------------------------ découverte au démarrage */
+async function partieDetecte(){
+  /* Un hébergeur gratuit s'endort et met parfois une minute à se réveiller.
+     Tant que quelque chose répond en face, on insiste au lieu d'abandonner. */
+  for(let essai = 0; essai < 25; essai++){
+    let repond = false;
     try{
-      const r = await fetch(withRoom("/api/state?v="+DISCORD.v), {cache:"no-store"});
-      if(!r.ok) throw new Error("état indisponible");
-      const s = await r.json();
-      DISCORD.fails = 0;
-      DISCORD.v = s.v;
-      DISCORD.ready = s.discord.ready; DISCORD.bound = s.discord.bound;
-      DISCORD.guild = s.discord.guild; DISCORD.channel = s.discord.channel;
-      DISCORD.demo = s.discord.demo;
-      DISCORD.players = s.players || [];
-      DISCORD.answers = s.answers || [];
-      DISCORD.buzz = s.buzz || [];
-      DISCORD.buzzOpen = !!s.buzzOpen;
-      DISCORD.buzzMode = !!s.buzzMode;
-      DISCORD.buzzWinner = s.buzzWinner || null;
-      /* Au premier tour apres un rechargement de page, on adopte la question
-         que le bot a deja publiee : sans cela on la reposterait en double. */
-      if(DISCORD.lastQ === null && s.question){
-        DISCORD.lastQ = s.question.id;
-        if(!s.question.open) DISCORD.lastReveal = s.question.id;
+      const r = await fetch("/api/ping", {cache:"no-store"});
+      repond = true;
+      if(r.ok){
+        const d = await r.json();
+        if(!d || !d.web) return false;   /* un serveur, mais pas le nôtre */
+        PARTIE.branchee = true;
+        await ouvrirSalon();
+        montePastille();
+        partieBoucle();
+        return true;
       }
-      await discordAdoptPlayers();
-      discordRefresh();
+    }catch(e){ repond = false; }
+    if(!repond) return false;            /* rien en face : usage hors ligne */
+    if(essai === 1){                     /* le réveil peut être long : on prévient */
+      PARTIE.branchee = true;
+      montePastille();
+    }
+    await new Promise(r=>setTimeout(r, 2500));
+  }
+  return false;
+}
+
+/* --------------------------------------------------------- boucle d'écoute */
+async function partieBoucle(){
+  while(PARTIE.branchee){
+    try{
+      /* Le salon a pu échouer au démarrage, ou disparaître si le serveur
+         redémarre : on le redemande plutôt que de rester muet. */
+      if(!PARTIE.code){
+        if(!await ouvrirSalon()){ await new Promise(r=>setTimeout(r, 2500)); continue; }
+        PARTIE.v = -1;
+        partieRafraichit();
+      }
+      const demande = PARTIE.code;
+      const r = await fetch(avecSalon("/api/state?v="+PARTIE.v), {cache:"no-store"});
+      if(r.status === 404){ PARTIE.code = ""; throw new Error("salon disparu"); }
+      if(!r.ok) throw new Error("état indisponible");
+      /* Le salon a pu changer pendant que la requête était en vol : on jette
+         cette réponse plutôt que de réafficher les joueurs de l'ancien. */
+      if(PARTIE.code !== demande) continue;
+
+      const s = await r.json();
+      PARTIE.echecs = 0;
+      PARTIE.v = s.v;
+      PARTIE.joueurs = s.players || [];
+      PARTIE.reponses = s.answers || [];
+      PARTIE.buzz = s.buzz || [];
+      PARTIE.buzzMode = !!s.buzzMode;
+      PARTIE.buzzGagnant = s.buzzWinner || null;
+
+      /* Après un rechargement de page, on adopte la question déjà publiée :
+         sans cela on la renverrait en double. */
+      if(PARTIE.derniereQ === null && s.question){
+        PARTIE.derniereQ = s.question.id;
+        if(!s.question.open) PARTIE.derniereReveal = s.question.id;
+      }
+      await adopteJoueurs();
+      partieRafraichit();
     }catch(e){
-      DISCORD.fails++;
-      if(DISCORD.fails > 2){ DISCORD.ready = false; discordRefresh(); }
+      PARTIE.echecs++;
+      if(PARTIE.echecs > 2) partieRafraichit();
       await new Promise(r=>setTimeout(r, 2500));
     }
   }
 }
 
-/* — Chaque joueur Discord devient une équipe, sauf s'il en a choisi une — */
-async function discordAdoptPlayers(){
+/* ------------------------------------- chaque joueur devient une équipe */
+async function adopteJoueurs(){
   if(!S.quiz) return;
-  const assign = [];
-  let created = false;
-  DISCORD.players.forEach(p=>{
-    if(p.teamId && S.quiz.teams.some(t=>t.id===p.teamId)) return;
-    let t = S.quiz.teams.find(x=>x.name.trim().toLowerCase() === p.name.trim().toLowerCase());
+  const liens = [];
+  let cree = false;
+  PARTIE.joueurs.forEach(j=>{
+    if(j.teamId && S.quiz.teams.some(t=>t.id===j.teamId)) return;
+    let t = S.quiz.teams.find(x=>x.name.trim().toLowerCase() === j.name.trim().toLowerCase());
     if(!t){
       t = newTeam(S.quiz);
-      t.name = p.name.slice(0,40);
+      t.name = j.name.slice(0,40);
       S.quiz.teams.push(t);
-      created = true;
+      cree = true;
     }
-    assign.push({userId:p.userId, teamId:t.id});
+    liens.push({userId:j.userId, teamId:t.id});
   });
-  if(created) touch();
+  if(cree) touch();
 
   /* Le score fait partie de la signature : dès que tu valides, la nouvelle
-     valeur repart vers le bot, qui la rappelle aux joueurs. */
+     valeur repart vers le serveur, qui l'affiche aux joueurs. */
   const equipes = S.quiz.teams.map(t=>({id:t.id, name:t.name, color:t.color,
                                         score:teamScore(S.quiz, t.id)}));
-  const sig = JSON.stringify(equipes);
-  if(assign.length || sig !== DISCORD.lastTeams){
-    DISCORD.lastTeams = sig;
-    await discordPost("/api/teams", {teams: equipes, assign: assign});
+  const signature = JSON.stringify(equipes);
+  if(liens.length || signature !== PARTIE.signatureEquipes){
+    PARTIE.signatureEquipes = signature;
+    await partiePost("/api/teams", {teams: equipes, assign: liens});
   }
-  if(created && (S.view==="teams" || S.view==="scores")) render();
+  if(cree && (S.view==="teams" || S.view==="scores")) render();
 }
 
-/* — Ce qu'une équipe a répondu à la question en cours — */
-function discordAnswerFor(teamId){
-  if(!DISCORD.on) return null;
-  return DISCORD.answers.find(a=>a.teamId === teamId) || null;
+/* ------------------------------------------- ce qu'une équipe a répondu */
+function reponseDe(teamId){
+  if(!PARTIE.branchee) return null;
+  return PARTIE.reponses.find(a=>a.teamId === teamId) || null;
 }
-/* Ton ecran est partage : tant que la reponse n'est pas revelee, on montre
-   seulement QUI a repondu et dans quel ordre, jamais ce qui a ete ecrit.
-   Le contenu apparait a la revelation, quand il n'y a plus rien a proteger. */
-function discordAnswerHTML(teamId){
-  if(!discordLive()) return "";
-  const a = discordAnswerFor(teamId);
+
+/* Ton écran peut être partagé : tant que la réponse n'est pas révélée, on
+   montre seulement qui a répondu et dans quel ordre, jamais le contenu. */
+function reponseHTML(teamId){
+  if(!partieActive()) return "";
+  const a = reponseDe(teamId);
   if(!a) return '<div class="tanswer none">en attente…</div>';
   if(!(S.play && S.play.phase === "revealed"))
     return '<div class="tanswer sent"><b>'+a.order+'</b>a répondu</div>';
   return '<div class="tanswer got" title="'+esc(a.value)+'">'+esc(a.value)+'</div>';
 }
 
-/* — Pastille d'état dans la barre du haut — */
-function discordMountPill(){
+/* ------------------------------------------------ pastille dans la barre */
+function montePastille(){
   if($("#dpill")) return;
-  const host = document.querySelector(".appbar-right");
-  if(!host) return;
+  const hote = document.querySelector(".appbar-right");
+  if(!hote) return;
   const b = document.createElement("button");
   b.id = "dpill"; b.className = "dpill"; b.type = "button";
-  b.title = "État de la liaison Discord";
-  b.onclick = discordStatusDialog;
-  host.insertBefore(b, host.firstChild);
-  discordRefresh();
+  b.title = "Salon de la partie";
+  b.onclick = salonDialog;
+  hote.insertBefore(b, hote.firstChild);
+  partieRafraichit();
 }
-function discordRefresh(){
+
+function partieRafraichit(){
+  const pastille = $("#dpill");
+  if(pastille){
+    const nb = PARTIE.joueurs.length;
+    let cls = "dpill", txt;
+    if(!PARTIE.code){ cls += " wait"; txt = "Réveil du serveur…"; }
+    else { cls += nb ? " live" : " wait"; txt = PARTIE.code + " · " + plural(nb,"joueur"); }
+    pastille.className = cls;
+    pastille.innerHTML = '<i></i><span>'+esc(txt)+'</span>';
+  }
   const cnt = $("#dCount");
   if(cnt){
-    const total = S.quiz ? DISCORD.players.length : 0;
-    cnt.textContent = DISCORD.answers.length + " / " + total + " ont répondu";
+    const total = PARTIE.joueurs.length;
+    cnt.textContent = PARTIE.reponses.length + " / " + total + " ont répondu";
     cnt.hidden = !total;
   }
-  const pill = $("#dpill");
-  if(pill){
-    const nb = DISCORD.players.length;
-    let cls = "dpill", txt = "Discord hors ligne";
-    if(DISCORD.web){
-      cls += nb ? " live" : " wait";
-      txt = DISCORD.code + " · " + plural(nb,"joueur");
-    }
-    else if(DISCORD.demo){ cls += " wait"; txt = "Démo · "+plural(nb,"joueur"); }
-    else if(!DISCORD.ready){ cls += ""; txt = "Discord connexion…"; }
-    else if(!DISCORD.bound){ cls += " wait"; txt = "Tape /quiz"; }
-    else { cls += " live"; txt = plural(nb,"joueur"); }
-    pill.className = cls;
-    pill.innerHTML = '<i></i><span>'+esc(txt)+'</span>';
-  }
   if(S.view === "play" && S.play){
-    discordBuzzIntoPlay();
+    buzzVersConsole();
     if($("#rail2")) renderRail2();
     if(typeof renderBuzzBanner === "function") renderBuzzBanner();
-    /* l'apparition ou la disparition du bouton « rendre la main » touche
-       la barre de transport, qui n'est reconstruite que par viewPlay */
     const aBouton = !!$("#tPass");
-    if(aBouton !== !!(DISCORD.buzzMode && DISCORD.buzzWinner)) viewPlay();
+    if(aBouton !== !!(PARTIE.buzzMode && PARTIE.buzzGagnant)) viewPlay();
   }
 }
 
-/* Les buzz Discord alimentent l'ordre déjà affiché sur les cartes. */
-function discordBuzzIntoPlay(){
-  if(!DISCORD.on || !DISCORD.buzz.length || !S.play) return;
+/* Les buzz alimentent l'ordre affiché sur les cartes. */
+function buzzVersConsole(){
+  if(!PARTIE.buzz.length || !S.play) return;
   const ids = [];
-  DISCORD.buzz.forEach(b=>{
-    const p = DISCORD.players.find(x=>x.userId===b.userId);
-    if(p && p.teamId && ids.indexOf(p.teamId)<0) ids.push(p.teamId);
+  PARTIE.buzz.forEach(b=>{
+    const j = PARTIE.joueurs.find(x=>x.userId===b.userId);
+    if(j && j.teamId && ids.indexOf(j.teamId)<0) ids.push(j.teamId);
   });
   if(ids.length) S.play.buzzes = ids;
 }
 
-/* — Ce que la console pousse vers Discord — */
-function discordSync(){
-  if(!DISCORD.on || S.view!=="play" || !S.play) return;
+/* --------------------------------------- ce que la console pousse vers eux */
+function partieSync(){
+  if(!partieActive() || S.view!=="play" || !S.play) return;
   const it = curItem();
   if(!it) return;
   const q = it.q;
 
-  if(S.play.phase === "question" && DISCORD.lastQ !== q.id){
-    DISCORD.lastQ = q.id; DISCORD.lastReveal = null;
-    discordSendWithMedia("/api/question", {
+  if(S.play.phase === "question" && PARTIE.derniereQ !== q.id){
+    PARTIE.derniereQ = q.id; PARTIE.derniereReveal = null;
+    partieEnvoi("/api/question", {
       id:q.id, index:S.play.i+1, total:flat(S.quiz).length, round:it.round.title,
       text:q.text, type:q.type, multi:!!q.multi, buzzMode:!!q.buzzMode,
       mediaHold: !!(q.media && q.media.hidden),
       points:qPoints(q, it.round, S.quiz), timer:qTimer(q, S.quiz),
       choices:q.choices.map(c=>({text:c.text}))
     }, q.media).then(r=>{
-      if(!r) toast("La question n'a pas pu être envoyée dans Discord. "+
-                   "Regarde la fenêtre du terminal.","bad",7000);
-    }).catch(()=> toast("La question n'a pas pu être envoyée dans Discord.","bad",7000));
+      if(!r) toast("La question n'a pas pu être envoyée aux joueurs.","bad",6000);
+    }).catch(()=> toast("La question n'a pas pu être envoyée aux joueurs.","bad",6000));
   }
-  if(S.play.phase === "revealed" && DISCORD.lastReveal !== q.id){
-    DISCORD.lastReveal = q.id;
+
+  if(S.play.phase === "revealed" && PARTIE.derniereReveal !== q.id){
+    PARTIE.derniereReveal = q.id;
     const ans = q.type==="qcm"
       ? q.choices.map((c,i)=>({c:c,i:i})).filter(x=>x.c.correct).map(x=>LETTERS[x.i]+". "+x.c.text).join("   ·   ")
       : q.answer;
-    /* On renvoie aussi ce que chacun avait repondu : le salon devient le
-       compte rendu de la question, et tout le monde voit qui avait bon. */
-    discordSendWithMedia("/api/reveal", {
-      answer:ans, note:q.note,
-      answers: DISCORD.answers.map(a=>({name:a.name, value:a.value}))
-    }, q.reveal);
+    partieEnvoi("/api/reveal", {answer:ans, note:q.note}, q.reveal);
   }
 }
-/* L'animateur appuie sur lecture : le signal part vers tous les joueurs. */
-function discordMediaStart(){ discordPost("/api/mediastart", {}); }
 
-/* Fin de partie : les écrans des joueurs se vident, les scores restent. */
-function discordStop(){ return discordPost("/api/stop", {}); }
-function discordClose(timeup){ discordPost("/api/close", {timeup: !!timeup}); }
-/* L'animateur rend la main : le buzzer se rouvre, sans celui qui vient d'echouer. */
-function discordPassHand(){
-  discordPost("/api/pass", {});
-  toast("La main passe — le buzzer est rouvert.","good");
-}
-function discordOpenBuzz(){
-  discordPost("/api/buzz", {open:true});
-  toast("Buzzer ouvert dans Discord.","good");
-}
-function discordPostScores(){
-  const rk = ranking(S.quiz);
-  discordPost("/api/scores", {
-    title: S.quiz.title || "Classement",
-    rows: rk.map(r=>({name:r.team.name, score:r.score}))
-  });
-  toast("Classement publié dans Discord.","good");
-}
+/* Les scores changent côté console, sans que le serveur en sache rien : sa
+   boucle d'écoute peut attendre vingt secondes avant de repasser. On pousse
+   donc explicitement après chaque validation, pour que les joueurs voient
+   leur score bouger tout de suite. */
+const partiePousseEquipes = ()=>{ if(partieActive()) adopteJoueurs(); };
 
-/* — Fenêtre d'état — */
-/* — Le salon web : code, lien, joueurs présents — */
-function salonWebDialog(){
+const partieFerme      = timeup => partiePost("/api/close", {timeup: !!timeup});
+const partieLanceMedia = ()=> partiePost("/api/mediastart", {});
+const partieRendLaMain = ()=>{ partiePost("/api/pass", {}); toast("La main passe.","good"); };
+const partieArret      = ()=> partiePost("/api/stop", {});
+
+/* ------------------------------------------------- fenêtre du salon */
+function salonDialog(){
+  if(!PARTIE.code){
+    toast("Le serveur n'a pas encore ouvert de salon. Réessaie dans quelques secondes.","bad",5000);
+    return;
+  }
   const lien = lienJoueur();
-  const liste = DISCORD.players.length
-    ? DISCORD.players.map(p=>'<div class="ledger-row"><span class="who">'+esc(p.name)+'</span>'+
+  const liste = PARTIE.joueurs.length
+    ? PARTIE.joueurs.map(j=>'<div class="ledger-row"><span class="who">'+esc(j.name)+'</span>'+
         '<span class="why"></span><span></span><span></span></div>').join("")
     : '<p class="hint">Personne pour l\'instant.</p>';
 
   const m = modal('<h2>Salon de la partie</h2><div class="body">'+
-    '<p class="hint">Tes joueurs ouvrent ce lien, entrent leur pseudo, et c\'est tout. '+
-    'Aucune inscription, aucun logiciel.</p>'+
+    '<p class="hint">Tes joueurs ouvrent ce lien, entrent un pseudo, et c\'est tout. '+
+    'Aucune inscription, rien à installer.</p>'+
     '<div class="field"><label>Code de la partie</label>'+
-      '<div class="disp" style="font-size:2.6rem;letter-spacing:.28em;text-align:center;'+
-      'background:var(--surface-2);border-radius:var(--r-m);padding:12px 0">'+esc(DISCORD.code)+'</div></div>'+
+      '<div class="code-salon">'+esc(PARTIE.code)+'</div></div>'+
     '<div class="field"><label for="wLien">Lien à partager</label>'+
       '<input type="text" id="wLien" readonly value="'+esc(lien)+'"></div>'+
     '<div class="btn-row">'+
@@ -2965,94 +2974,27 @@ function salonWebDialog(){
       '<button class="btn btn-outline" id="wNew">Nouveau salon</button>'+
     '</div>'+
     '<hr class="rule">'+
-    '<div class="panel-hd"><h3>Joueurs</h3><span class="pill">'+plural(DISCORD.players.length,"joueur")+'</span></div>'+
+    '<div class="panel-hd"><h3>Joueurs</h3><span class="pill">'+plural(PARTIE.joueurs.length,"joueur")+'</span></div>'+
     '<div class="ledger">'+liste+'</div>'+
   '</div><div class="foot"><button class="btn btn-ghost" data-x="close">Fermer</button></div>');
 
   m.root.querySelector('[data-x="close"]').onclick = m.close;
-  m.root.querySelector("#wCopy").onclick = ()=> copyText(lien, "Lien copié — colle-le dans ton salon Discord.");
+  m.root.querySelector("#wCopy").onclick = ()=> copyText(lien, "Lien copié — envoie-le à tes joueurs.");
   m.root.querySelector("#wNew").onclick = async ()=>{
     if(!await confirmBox("Ouvrir un nouveau salon ?",
         "Les joueurs déjà connectés seront déconnectés et devront entrer le nouveau code.",
         "Nouveau salon", true)) return;
-    try{ localStorage.removeItem(ROOM_KEY); }catch(e){}
-    DISCORD.code = ""; DISCORD.v = -1;
+    try{ localStorage.removeItem(SALON_CLE); }catch(e){}
+    PARTIE.code = ""; PARTIE.v = -1;
+    PARTIE.joueurs = []; PARTIE.reponses = []; PARTIE.buzz = [];
+    PARTIE.derniereQ = null; PARTIE.derniereReveal = null; PARTIE.signatureEquipes = "";
     await ouvrirSalon();
-    m.close(); discordRefresh();
-    toast("Nouveau salon : "+DISCORD.code, "good", 5000);
+    m.close(); partieRafraichit();
+    toast("Nouveau salon : "+PARTIE.code, "good", 5000);
   };
 }
 
-async function discordStatusDialog(){
-  const lignes = DISCORD.players.length
-    ? DISCORD.players.map(p=>{
-        const t = S.quiz && S.quiz.teams.find(x=>x.id===p.teamId);
-        return '<div class="ledger-row"><span class="who">'+esc(p.name)+'</span>'+
-               '<span class="why">'+(t?esc(t.name):"—")+'</span><span></span><span></span></div>';
-      }).join("")
-    : '<p class="hint">Personne pour l\'instant. Les joueurs entrent avec le bouton du message <code>/quiz</code>.</p>';
-
-  /* En mode web, la fenêtre sert à distribuer le code et le lien. */
-  if(DISCORD.web) return salonWebDialog();
-
-  /* Secours : si la commande /quiz n'est pas enregistree sur le serveur,
-     on choisit le salon ici, ce qui revient exactement au meme. */
-  let choix = "";
-  if(DISCORD.ready && !DISCORD.bound && !DISCORD.demo){
-    let salons = [];
-    try{ salons = (await fetch("/api/channels").then(r=>r.json())).channels || []; }catch(e){}
-    choix = salons.length
-      ? '<hr class="rule"><div class="field"><label for="dChan">Ouvrir la partie dans</label>'+
-        '<select id="dChan">'+ salons.map(c=>
-          '<option value="'+esc(c.id)+'">'+esc(c.guild)+' &nbsp;·&nbsp; #'+esc(c.name)+'</option>').join("")+
-        '</select><span class="hint">Équivaut à taper <code>/quiz</code> dans ce salon.</span></div>'+
-        '<div class="btn-row"><button class="btn btn-gold" id="dBind">Ouvrir la partie ici</button></div>'
-      : '<hr class="rule"><p class="hint">Le bot ne voit aucun salon où il a le droit d\'écrire. '+
-        'Vérifie qu\'il est bien sur le serveur et qu\'il peut envoyer des messages.</p>';
-  }
-
-  let etat, aide;
-  if(DISCORD.demo){
-    etat = '<span class="pill gold">Mode démo</span>';
-    aide = "Discord n'est pas connecté : trois joueurs simulés répondent tout seuls, pour que tu essaies le déroulé.";
-  } else if(!DISCORD.ready){
-    etat = '<span class="pill">Connexion…</span>';
-    aide = "Le bot n'a pas encore rejoint Discord. Vérifie la fenêtre du terminal.";
-  } else if(!DISCORD.bound){
-    etat = '<span class="pill gold">En attente de salon</span>';
-    aide = "Le bot est connecté, il ne lui manque que le salon. Choisis-le ci-dessous — "+
-           "ou tape <code>/quiz</code> dans Discord, si la commande y apparaît.";
-  } else {
-    etat = '<span class="pill mint">En ligne</span>';
-    aide = "Les questions partent dans <strong>#"+esc(DISCORD.channel||"?")+"</strong> dès que tu les affiches. Les réponses restent privées entre le joueur et toi.";
-  }
-
-  const m = modal('<h2>Liaison Discord</h2><div class="body">'+
-    '<div class="btn-row">'+etat+
-      (DISCORD.guild ? '<span class="pill">'+esc(DISCORD.guild)+'</span>' : '')+
-      (DISCORD.channel ? '<span class="pill">#'+esc(DISCORD.channel)+'</span>' : '')+
-    '</div>'+
-    '<p class="hint">'+aide+'</p>'+
-    choix+
-    '<hr class="rule">'+
-    '<div class="panel-hd"><h3>Joueurs</h3><span class="pill">'+plural(DISCORD.players.length,"joueur")+'</span></div>'+
-    '<div class="ledger">'+lignes+'</div>'+
-  '</div><div class="foot">'+
-    '<button class="btn btn-ghost" data-x="close">Fermer</button>'+
-    '<button class="btn btn-outline" id="dScores">Publier le classement</button>'+
-  '</div>');
-  m.root.querySelector('[data-x="close"]').onclick = m.close;
-  m.root.querySelector("#dScores").onclick = ()=>{ discordPostScores(); m.close(); };
-  if(m.root.querySelector("#dBind")) m.root.querySelector("#dBind").onclick = async ()=>{
-    const id = m.root.querySelector("#dChan").value;
-    const r = await discordPost("/api/bind", {channelId:id});
-    m.close();
-    toast(r && r.ok ? "Partie ouverte dans le salon." : "Le bot n'a pas pu écrire dans ce salon.",
-          r && r.ok ? "good" : "bad", 5000);
-  };
-}
-
-discordDetect();
+partieDetecte();
 </script>
 </body>
 </html>
