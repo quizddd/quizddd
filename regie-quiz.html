@@ -1749,7 +1749,8 @@ let TICK = null;          /* intervalle du chrono */
 
 /* Le volume est un reglage de l'animateur, pas de la question : il survit au
    passage d'un extrait au suivant, et meme au rechargement de la page. */
-const VOL_KEY = "regie-quiz:volume";
+/* Voir la page joueur : cle separee, sinon les deux volumes se confondent. */
+const VOL_KEY = "regie-quiz:volume-animateur";
 let VOLUME = 1;
 try{
   const v = parseFloat(localStorage.getItem(VOL_KEY));

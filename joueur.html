@@ -273,7 +273,10 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const MAIN = $("#main");
 const CLE = "regie-quiz:joueur";
-const CLE_VOL = "regie-quiz:volume";
+/* Cle distincte de celle de la console : les deux pages viennent du meme
+   domaine et partagent le stockage du navigateur. Avec une cle commune, un
+   joueur qui baisse le son le baissait aussi chez l'animateur. */
+const CLE_VOL = "regie-quiz:volume-joueur";
 
 let ME = { code:"", playerId:"", name:"" };
 let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
