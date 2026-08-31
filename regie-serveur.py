@@ -47,7 +47,10 @@ VERSION = "2026-08-30 web-2"
 CLE_ANIMATEUR = (os.environ.get("CODE_ANIMATEUR") or "").strip()
 
 MEDIA_MAX = 48 * 1024 * 1024     # au-dela, on refuse l'envoi du media
-SALON_MAX = 40                   # parties simultanees
+SALON_MAX = 12                   # parties simultanees
+# L'offre gratuite de l'hebergeur tient dans 512 Mo. Un media de 48 Mo par
+# partie suffirait a la faire tuer en pleine soiree : on plafonne le total.
+MEMOIRE_MAX = 180 * 1024 * 1024
 INACTIF = 6 * 3600               # une partie oubliee expire au bout de 6 h
 LETTRES = "ABCDEFGHJKLMNPQRSTUVWXYZ"   # sans I ni O, illisibles a l'oral
 
@@ -83,6 +86,24 @@ class Salon:
         self.buzz = []
         self.buzz_gagnant = None
         self.buzz_passes = []
+        self.buzz_seq = 0        # incremente a chaque buzz : declenche le son
+        self.q_cachee = False    # la question est masquee tant que l'animateur parle
+        self.chat = []           # [{"id", "name", "role", "text", "at"}]
+        self.chat_seq = 0
+        # Rembobinage et relecture : les joueurs suivent la position de l'animateur.
+        self.media_cmd = {"seq": 0, "pos": 0.0, "playing": True, "at": 0.0}
+        # Media de la question suivante, envoye pendant que celle-ci se joue :
+        # sinon l'animateur reste plusieurs secondes devant un ecran vide.
+        self.pre_media = None
+
+    def poids(self):
+        """Octets de media retenus par cette partie."""
+        n = 0
+        if self.media:
+            n += len(self.media["data"])
+        if self.pre_media:
+            n += len(self.pre_media["data"])
+        return n
 
     def touch(self):
         self.version += 1
@@ -113,6 +134,8 @@ class Salon:
             "buzzWinner": (None if self.buzz_gagnant is None else
                            {"userId": self.buzz_gagnant,
                             "name": self.joueurs.get(self.buzz_gagnant, {}).get("name", "?")}),
+            "questionHidden": self.q_cachee,
+            "chat": self.chat[-60:],
         }
 
     # -- vue d'un joueur ----------------------------------------------------
@@ -127,7 +150,8 @@ class Salon:
             "code": self.code,
             "me": (self.joueurs.get(pid) or {}).get("name"),
             "players": sorted(j["name"] for j in self.joueurs.values()),
-            "question": self.question,
+            "question": self.question_pour_joueur(),
+            "questionHidden": self.q_cachee,
             "open": self.ouverte,
             "canAnswer": bool(peut_repondre),
             "media": ({"id": self.media["id"], "kind": self.media["kind"],
@@ -150,7 +174,37 @@ class Salon:
             "canBuzz": bool(self.question and self.question.get("buzzMode")
                             and self.ouverte and self.buzz_gagnant is None
                             and pid not in self.buzz_passes),
+            "buzzSeq": self.buzz_seq,
+            "mediaCmd": self.media_cmd,
+            "chat": self.chat[-60:],
+            "toutes": self.reponses_publiques(),
         }
+
+    def reponses_publiques(self):
+        """Ce que tout le monde a repondu. Uniquement apres la revelation :
+        avant, une reponse visible par les autres fausserait la question."""
+        if not self.revele or not self.question:
+            return []
+        seau = self.reponses.get(self.question["id"]) or {}
+        lignes = []
+        for pid, r in seau.items():
+            j = self.joueurs.get(pid) or {}
+            lignes.append({"name": j.get("name", "?"),
+                           "value": r.get("value", ""),
+                           "order": r.get("order", 0)})
+        lignes.sort(key=lambda x: x["order"])
+        return lignes
+
+    def question_pour_joueur(self):
+        """Question masquee : l'enonce ne doit pas atteindre le navigateur du
+        joueur, sinon il suffit d'ouvrir les outils de developpement pour le
+        lire. On ne garde que de quoi afficher le cadre."""
+        if not self.question or not self.q_cachee:
+            return self.question
+        q = dict(self.question)
+        q["text"] = ""
+        q["choices"] = []
+        return q
 
 
 SALONS = {}
@@ -170,6 +224,22 @@ def menage():
     for c in [c for c, s in SALONS.items() if s.vu < limite]:
         SALONS.pop(c, None)
         say("Salon %s expire" % c)
+    # Au-dela du plafond, on relache les medias des parties les plus anciennes
+    # plutot que de risquer l'arret brutal du serveur.
+    total = sum(s.poids() for s in SALONS.values())
+    if total > MEMOIRE_MAX:
+        for c, s in sorted(SALONS.items(), key=lambda kv: kv[1].vu):
+            if total <= MEMOIRE_MAX:
+                break
+            liberes = s.poids()
+            if not liberes:
+                continue
+            s.media = None
+            s.pre_media = None
+            s.media_debut = 0
+            total -= liberes
+            say("Salon %s - medias liberes (memoire)" % c)
+
     while len(SALONS) > SALON_MAX:
         vieux = min(SALONS.values(), key=lambda s: s.vu)
         SALONS.pop(vieux.code, None)
@@ -249,6 +319,30 @@ async def lire_corps(request):
     return await request.json(), None
 
 
+async def h_premedia(request):
+    """Deposer a l'avance le media de la question suivante. L'animateur
+    l'envoie pendant que la question en cours se joue, ce qui supprime
+    l'attente au moment de l'afficher."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body, media = await lire_corps(request)
+    qid = (body.get("qid") or "").strip()
+    if not qid or not media:
+        return rep({"ok": False, "error": "rien a deposer"}, status=400)
+    if media["size"] > MEDIA_MAX:
+        return rep({"ok": False, "error": "trop lourd"}, status=413)
+    s.pre_media = {"qid": qid, "kind": body.get("mediaKind") or "",
+                   "name": media["name"], "type": media["type"], "data": media["data"]}
+    s.vu = time.time()
+    menage()          # la memoire vient de grossir : c'est ici qu'il faut veiller
+    say("Salon %s - media de la question suivante recu (%.1f Mo)" % (
+        s.code, media["size"] / 1048576.0))
+    return rep({"ok": True})
+
+
 async def h_question(request):
     if not anim_ok(request):
         return refus()
@@ -272,6 +366,8 @@ async def h_question(request):
         "choices": choix, "buzzMode": bool(body.get("buzzMode")),
     }
     s.reponses.setdefault(s.question["id"], {})
+    s.q_cachee = bool(body.get("questionHidden"))
+    s.media_cmd = {"seq": 0, "pos": 0.0, "playing": True, "at": 0.0}
     s.revele = None
     s.ouverte = True
     s.debut = time.time()
@@ -290,6 +386,15 @@ async def h_question(request):
         s.blur = 0
     s.media_url = (body.get("mediaUrl") or "").strip()[:500]
     s.media_url_kind = body.get("mediaKind") or ""
+    # Le media a peut-etre ete depose pendant la question precedente.
+    if media is None and s.pre_media and s.pre_media["qid"] == s.question["id"]:
+        media = {"data": s.pre_media["data"], "name": s.pre_media["name"],
+                 "type": s.pre_media["type"], "size": len(s.pre_media["data"])}
+        if not s.media_url_kind:
+            s.media_url_kind = s.pre_media["kind"]
+        body = dict(body, mediaKind=body.get("mediaKind") or s.pre_media["kind"])
+    if s.pre_media and s.pre_media["qid"] == s.question["id"]:
+        s.pre_media = None
     if media and media["size"] <= MEDIA_MAX:
         s.media = {"id": "m_%d" % int(s.debut * 1000), "kind": body.get("mediaKind") or "",
                    "name": media["name"], "type": media["type"], "data": media["data"]}
@@ -309,6 +414,7 @@ async def h_question(request):
         else:
             say("Salon %s - question %s/%s" % (s.code, s.question["index"], s.question["total"]))
     s.touch()
+    menage()          # un media vient d'etre retenu : on verifie le plafond
     return rep({"ok": True})
 
 
@@ -340,6 +446,8 @@ async def h_stop(request):
 async def h_chrono(request):
     """L'animateur met en pause ou rallonge : les joueurs doivent suivre,
     sinon leur decompte continue de filer alors que le temps est arrete."""
+    if not anim_ok(request):
+        return refus()
     s = salon_de(request)
     if s is None:
         return rep({"ok": False}, status=404)
@@ -355,12 +463,18 @@ async def h_chrono(request):
         s.gel = reste
     if reste > s.duree:
         s.duree = reste          # une rallonge agrandit aussi la barre
+    # Rendre du temps n'a de sens que si les joueurs peuvent encore repondre :
+    # sinon ils voient un decompte tourner sous « les reponses sont closes ».
+    if reste > 0 and s.revele is None:
+        s.ouverte = True
     s.touch()
     return rep({"ok": True})
 
 
 async def h_blur(request):
     """L'animateur fait varier le flou : les joueurs suivent en direct."""
+    if not anim_ok(request):
+        return refus()
     s = salon_de(request)
     if s is None:
         return rep({"ok": False}, status=404)
@@ -406,10 +520,36 @@ async def h_reveal(request):
     body, media = await lire_corps(request)
     s.ouverte = False
     s.revele = {"answer": body.get("answer") or "", "note": body.get("note") or ""}
+    lien = (body.get("mediaUrl") or "").strip()[:500]
     if media and media["size"] <= MEDIA_MAX:
         s.media = {"id": "m_%d" % int(time.time() * 1000), "kind": body.get("mediaKind") or "",
                    "name": media["name"], "type": media["type"], "data": media["data"]}
+        s.media_url = ""
+        s.media_url_kind = ""
         s.debut = time.time()
+        s.media_debut = time.time()
+    elif lien:
+        # Un media de revelation donne par lien doit repartir comme celui de la
+        # question : sans ca il n'atteint jamais les joueurs, et sans un mot.
+        s.media = None
+        s.media_url = lien
+        s.media_url_kind = body.get("mediaKind") or ""
+        s.debut = time.time()
+        s.media_debut = time.time()
+    s.touch()
+    return rep({"ok": True})
+
+
+async def h_unreveal(request):
+    """L'animateur remasque la reponse : les joueurs doivent la perdre aussi,
+    sinon elle leur reste a l'ecran et ils ne peuvent plus rien saisir."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    s.revele = None
+    s.ouverte = True
     s.touch()
     return rep({"ok": True})
 
@@ -445,6 +585,108 @@ async def h_teams(request):
         for t in equipes:
             if t.get("id") == j.get("team_id"):
                 j["score"] = t.get("score")
+    s.touch()
+    return rep({"ok": True})
+
+
+async def h_kick(request):
+    """Expulser quelqu'un. Utile quand un joueur plante et revient : sans ca
+    son ancienne place garde son pseudo, et il revient en « Machin 2 »."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    pid = (body.get("playerId") or "").strip()
+    j = s.joueurs.pop(pid, None)
+    if j is None:
+        return rep({"ok": False, "error": "joueur inconnu"}, status=404)
+    for seau in s.reponses.values():
+        seau.pop(pid, None)
+    s.buzz = [p for p in s.buzz if p != pid]
+    s.buzz_passes = [p for p in s.buzz_passes if p != pid]
+    if s.buzz_gagnant == pid:
+        s.buzz_gagnant = None
+    s.touch()
+    say("Salon %s - %s expulse (%d joueurs)" % (s.code, j.get("name", "?"), len(s.joueurs)))
+    return rep({"ok": True})
+
+
+async def h_buzzreset(request):
+    """Tout le monde peut buzzer de nouveau, y compris ceux qui ont deja eu
+    leur tour. Pratique quand personne ne trouve."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    s.buzz = []
+    s.buzz_gagnant = None
+    s.buzz_passes = []
+    s.touch()
+    return rep({"ok": True})
+
+
+async def h_showquestion(request):
+    """Afficher ou masquer l'enonce chez les joueurs, sans toucher au media."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    s.q_cachee = bool(body.get("hidden"))
+    s.touch()
+    return rep({"ok": True})
+
+
+async def h_mediacmd(request):
+    """L'animateur rembobine, avance ou relance : les joueurs se recalent."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    try:
+        pos = max(0.0, float(body.get("pos") or 0))
+    except (TypeError, ValueError):
+        pos = 0.0
+    joue = bool(body.get("playing"))
+    maintenant = time.time()
+    s.media_cmd = {"seq": s.media_cmd["seq"] + 1, "pos": pos,
+                   "playing": joue, "at": maintenant}
+    # Un joueur qui arrive apres coup doit tomber au meme endroit.
+    s.media_debut = (maintenant - pos) if joue else 0
+    s.touch()
+    return rep({"ok": True})
+
+
+async def h_chat(request):
+    """Un message dans le fil. Les joueurs s'identifient par leur playerId ;
+    sans playerId, c'est l'animateur, et il faut alors son code."""
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    texte = (body.get("text") or "").strip()[:300]
+    if not texte:
+        return rep({"ok": False, "error": "message vide"}, status=400)
+    pid = (body.get("playerId") or "").strip()
+    if pid:
+        j = s.joueurs.get(pid)
+        if j is None:
+            return rep({"ok": False, "error": "joueur inconnu"}, status=404)
+        nom, role = j.get("name", "?"), "joueur"
+    else:
+        if not anim_ok(request):
+            return refus()
+        nom, role = (body.get("name") or "Animateur")[:24], "anim"
+    s.chat_seq += 1
+    s.chat.append({"id": s.chat_seq, "name": nom, "role": role,
+                   "text": texte, "at": time.time()})
+    del s.chat[:-200]
     s.touch()
     return rep({"ok": True})
 
@@ -577,6 +819,7 @@ async def h_buzz_joueur(request):
         return rep({"ok": False, "error": "Tu as déjà eu ta chance."}, status=409)
     s.buzz_gagnant = pid
     s.buzz = [pid]
+    s.buzz_seq += 1
     s.touch()
     return rep({"ok": True})
 
@@ -621,15 +864,22 @@ def build_app():
     r.add_post("/api/room", h_ouvrir)
     r.add_get("/api/state", h_state)
     r.add_post("/api/question", h_question)
+    r.add_post("/api/premedia", h_premedia)
     r.add_post("/api/close", h_close)
     r.add_post("/api/mediastart", h_mediastart)
     r.add_post("/api/blur", h_blur)
     r.add_post("/api/chrono", h_chrono)
     r.add_post("/api/stop", h_stop)
     r.add_post("/api/reveal", h_reveal)
+    r.add_post("/api/unreveal", h_unreveal)
     r.add_post("/api/scores", h_scores)
     r.add_post("/api/teams", h_teams)
     r.add_post("/api/pass", h_pass)
+    r.add_post("/api/kick", h_kick)
+    r.add_post("/api/buzzreset", h_buzzreset)
+    r.add_post("/api/showquestion", h_showquestion)
+    r.add_post("/api/mediacmd", h_mediacmd)
+    r.add_post("/api/chat", h_chat)
     r.add_post("/api/buzz", h_buzz)
 
     r.add_post("/api/join", h_join)

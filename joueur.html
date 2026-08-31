@@ -60,6 +60,7 @@ button,input{font:inherit; color:inherit}
 .timer i{display:block; height:100%; width:100%; background:var(--gold); transition:width .25s linear}
 .timer.warn i{background:var(--rose)}
 
+.zone{flex:1; min-height:0; display:flex; align-items:stretch}
 main{flex:1; min-height:0; display:flex; flex-direction:column; align-items:center;
      padding:20px 16px 32px; gap:18px; width:100%; max-width:720px; margin:0 auto}
 
@@ -73,7 +74,12 @@ main{flex:1; min-height:0; display:flex; flex-direction:column; align-items:cent
   font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1;
   padding:2px 4px; color:var(--text);
 }
-.chrono.warn{color:var(--rose); animation:bat .9s ease-in-out infinite}
+/* Les cinq dernières secondes doivent se voir du coin de l'oeil, sans que le
+   joueur ait à quitter le média des yeux. */
+.chrono.warn{
+  color:var(--rose); animation:bat .9s ease-in-out infinite;
+  transform:scale(1.18); transform-origin:center;
+}
 .chrono.fini{color:var(--rose)}
 /* Chrono gelé par l'animateur : on le montre, pour que personne ne croie
    que la page a planté. */
@@ -165,12 +171,74 @@ input::placeholder{color:var(--text-3)}
 .rang .nm{flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .rang .pt{font-family:var(--f-display); font-size:1.25rem; font-weight:700}
 
+/* Une fois la réponse donnée, la moitié du plaisir est de voir ce que les
+   autres avaient écrit. Rien n'apparaît avant la révélation. */
+.toutes{width:100%; display:flex; flex-direction:column; gap:5px; margin-top:4px}
+.toutes .t{
+  display:flex; align-items:baseline; gap:10px; padding:8px 13px;
+  border-radius:var(--r-m); background:var(--surface); border:1px solid var(--line-soft);
+}
+.toutes .t.moi{border-color:var(--gold); background:var(--gold-dim)}
+.toutes .qui{
+  font-family:var(--f-display); font-size:.72rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-3); flex:none; max-width:9em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.toutes .quoi{flex:1; min-width:0; overflow-wrap:anywhere}
+.toutes .vide{color:var(--text-3); font-style:italic}
+
 .centre{margin:auto; width:100%; max-width:400px; display:flex; flex-direction:column; gap:16px}
 .gros{font-family:var(--f-display); font-size:2rem; font-weight:700; letter-spacing:.03em;
       text-transform:uppercase; text-align:center}
 .err{color:var(--rose); font-size:.9rem; text-align:center; min-height:1.2em}
 .pulse{animation:p 1.6s ease-in-out infinite}
 @keyframes p{0%,100%{opacity:1}50%{opacity:.45}}
+
+/* Chaque joueur écoute dans ses conditions à lui : casque, enceinte de
+   téléphone, voisins qui dorment. Le réglage lui appartient. */
+.volume{display:flex; align-items:center; gap:10px; width:100%}
+.volume label{margin:0; flex:none}
+.volume input[type=range]{flex:1; min-width:0; accent-color:var(--gold); background:transparent}
+.volume .val{font-family:var(--f-mono); font-size:.8rem; color:var(--text-3);
+  width:3.4em; text-align:right; flex:none}
+
+/* Énoncé gardé pour l'oral : sans un mot ici, le joueur croirait à une panne. */
+.oral{
+  width:100%; padding:18px 16px; text-align:center; color:var(--text-2);
+  background:var(--surface); border:1px dashed var(--line); border-radius:var(--r-l);
+}
+.oral b{
+  display:block; margin-bottom:5px; color:var(--gold); font-family:var(--f-display);
+  font-size:1.05rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+}
+
+.chat-panel{
+  flex:none; width:320px; display:flex; flex-direction:column; gap:10px;
+  padding:14px; background:var(--bg-2); border-left:1px solid var(--line-soft);
+}
+.chat-titre{font-family:var(--f-display); font-size:.8rem; font-weight:600;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--text-3)}
+.chat-liste{flex:1; min-height:90px; overflow-y:auto; display:flex; flex-direction:column; gap:7px}
+.chat-msg{
+  padding:7px 10px; border-radius:var(--r-m); font-size:.92rem;
+  background:var(--surface); border:1px solid var(--line-soft);
+}
+.chat-msg.anim{background:var(--gold-dim); border-color:var(--gold)}
+.chat-nom{display:block; font-size:.72rem; font-weight:700; letter-spacing:.04em; color:var(--text-3)}
+.chat-msg.anim .chat-nom{color:var(--gold)}
+.chat-texte{display:block; color:var(--text-2); overflow-wrap:anywhere}
+.chat-vide{color:var(--text-3); font-size:.88rem; text-align:center; padding:16px 6px}
+.chat-saisie{display:flex; gap:8px}
+.chat-saisie input[type=text]{flex:1; min-width:0; padding:10px 12px; font-size:.95rem}
+.chat-saisie .btn{flex:none; padding:10px 14px; font-size:.9rem}
+
+/* Sur un téléphone, le chat passe dessous : comprimer la question et le
+   buzzer pour loger une colonne rendrait la partie injouable. */
+@media (max-width: 900px){
+  .zone{flex-direction:column}
+  .chat-panel{width:auto; border-left:0; border-top:1px solid var(--line-soft)}
+  .chat-liste{max-height:38vh}
+}
 @media (prefers-reduced-motion: reduce){*{animation:none !important; transition:none !important}}
 </style>
 
@@ -186,7 +254,17 @@ input::placeholder{color:var(--text-3)}
     </header>
     <div class="timer" id="timer" hidden><i id="timerFill"></i></div>
   </div>
-  <main id="main"></main>
+  <div class="zone">
+    <main id="main"></main>
+    <aside class="chat-panel" id="chat" hidden>
+      <div class="chat-titre">Chat</div>
+      <div class="chat-liste" id="chatListe"></div>
+      <div class="chat-saisie">
+        <input type="text" id="chatTexte" maxlength="300" autocomplete="off" placeholder="Écris au groupe">
+        <button class="btn" id="chatGo">Envoyer</button>
+      </div>
+    </aside>
+  </div>
 </div>
 
 <script>
@@ -195,12 +273,16 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const MAIN = $("#main");
 const CLE = "regie-quiz:joueur";
+const CLE_VOL = "regie-quiz:volume";
 
 let ME = { code:"", playerId:"", name:"" };
 let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
+let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
+
+try{ const v = parseFloat(localStorage.getItem(CLE_VOL)); if(v >= 0 && v <= 1) VOLUME = v; }catch(e){}
 
 const params = new URLSearchParams(location.search);
 if(params.get("c")) ME.code = params.get("c").toUpperCase();
@@ -208,6 +290,8 @@ if(params.get("c")) ME.code = params.get("c").toUpperCase();
 /* ------------------------------------------------ écran d'entrée */
 function vueEntree(erreur){
   couperMedia();
+  $("#chat").hidden = true;
+  CHAT_VU = "";
   MAIN.innerHTML =
     '<div class="centre">'+
       '<div class="gros">Rejoindre la partie</div>'+
@@ -276,7 +360,7 @@ function majBandeau(coupe){
 }
 
 /* ------------------------------------------------ media : arret franc */
-let SIG_MEDIA = null;
+let SIG_MEDIA = null, CHRONO_ARME = null;
 
 /* Ce qui identifie le media affiche. Tant que ca ne bouge pas, le lecteur
    en place est le bon et on le laisse tranquille. */
@@ -293,6 +377,7 @@ function signatureMedia(){
 function couperMedia(){
   const hote = $("#media");
   SIG_MEDIA = null;
+  CMD_SEQ = 0;          /* nouveau média : les commandes de l'ancien ne valent plus */
   if(!hote) return;
   hote.querySelectorAll("video,audio").forEach(el=>{
     try{ el.pause(); el.removeAttribute("src"); el.load(); }catch(e){}
@@ -309,10 +394,14 @@ function dessiner(){
   const q = d.question;
   const cle = JSON.stringify([q && q.id, d.open, d.mine, d.reveal, d.canBuzz,
                               d.buzzWinner, d.media && d.media.id, d.mediaStart>0,
-                              d.mediaUrl, d.scores.length]);
+                              d.mediaUrl, d.scores, !!d.questionHidden,
+                              (d.toutes||[]).length]);
   if(cle !== VU){ VU = cle; construire(); }
   majChrono();
   appliqueFlou();
+  suivreMedia();
+  suivreBuzz();
+  majChat();
 }
 
 function construire(){
@@ -339,13 +428,24 @@ function construire(){
           (q.points!=null ? ' · '+q.points+' pt'+(Math.abs(q.points)>1?'s':'') : '')+'</div>';
 
   if(d.media || d.mediaUrl) h += '<div class="media" id="media"></div>';
-  if(q.text)  h += '<h2 class="qtext">'+esc(q.text)+'</h2>';
+  /* L'énoncé n'est pas seulement caché : le serveur ne l'envoie pas. Inutile
+     de laisser un blanc, on dit pourquoi. */
+  if(d.questionHidden){
+    /* Sur un QCM, les propositions ne sont pas envoyees non plus : proposer un
+       champ libre n'aurait aucun sens, on fait patienter. */
+    const attend = q.type === "qcm";
+    h += "<div class=\"oral\"><b>Question posée à l’oral</b>" +
+         (attend ? "Écoute l’animateur : les propositions arrivent."
+                 : "Écoute l’animateur, puis réponds ici.") + "</div>";
+  } else if(q.text){
+    h += '<h2 class="qtext">'+esc(q.text)+'</h2>';
+  }
 
   if(d.reveal){
     h += '<div class="reveal"><span class="lbl">Réponse</span>'+
          '<div class="ans">'+esc(d.reveal.answer || "—")+'</div>'+
          (d.reveal.note ? '<div class="why">'+esc(d.reveal.note)+'</div>' : '')+'</div>';
-    if(d.mine) h += '<p class="etat">Ta réponse : <b>'+esc(d.mine)+'</b></p>';
+    h += toutesLesReponses();
     h += '<p class="note">L\'animateur attribue les points.</p>';
   } else if(q.buzzMode && !d.mine){
     if(d.buzzWinner && d.buzzWinner !== d.me){
@@ -357,6 +457,8 @@ function construire(){
     } else {
       h += '<p class="etat">Tu as déjà eu ta chance sur cette question.</p>';
     }
+  } else if(d.questionHidden && q.type === "qcm"){
+    h += '<p class="etat att pulse">Les propositions arrivent…</p>';
   } else if(!d.open){
     h += '<p class="etat no">Les réponses sont closes.</p>';
     if(d.mine) h += '<p class="etat">Ta réponse : <b>'+esc(d.mine)+'</b></p>';
@@ -445,6 +547,21 @@ async function buzzer(){
   }catch(e){}
 }
 
+/* Le serveur ne les envoie qu'après la révélation : avant, voir la réponse
+   du voisin viderait la question de son intérêt. */
+function toutesLesReponses(){
+  const d = ETAT, liste = d.toutes || [];
+  if(!liste.length){
+    return d.mine ? '<p class="etat">Ta réponse : <b>'+esc(d.mine)+'</b></p>' : "";
+  }
+  return '<div class="toutes">'+ liste.map(r=>
+    '<div class="t'+(r.name === d.me ? " moi" : "")+'">'+
+      '<span class="qui">'+esc(r.name)+'</span>'+
+      '<span class="quoi'+(r.value ? "" : " vide")+'">'+
+        esc(r.value || "rien écrit")+'</span>'+
+    '</div>').join("")+'</div>';
+}
+
 function classement(seul){
   const d = ETAT;
   if(!d.scores || !d.scores.length) return "";
@@ -481,10 +598,17 @@ function majChrono(){
   };
   /* Temps gelé : plus de décompte, on affiche la valeur figée telle quelle. */
   if(gele){ peindre(d.gel); return; }
+  const qid = d.question && d.question.id;
   const battre = ()=>{
     const reste = Math.max(0, d.deadline*1000 - (Date.now()+DERIVE)) / 1000;
     peindre(reste);
-    if(reste <= 0) clearInterval(TIC);
+    /* On n'arme la sonnerie que si on a vu le temps tourner : un joueur qui
+       arrive après la fin ne doit pas se prendre les trois notes. */
+    if(reste > 1) CHRONO_ARME = qid;
+    if(reste <= 0){
+      if(CHRONO_ARME === qid && qid){ CHRONO_ARME = null; sonFin(); }
+      clearInterval(TIC);
+    }
   };
   battre();
   TIC = setInterval(battre, 200);
@@ -508,6 +632,60 @@ function appliqueFlou(){
   });
 }
 
+/* Où en est le média, du point de vue de l'animateur. La dernière commande
+   qu'il a passée fait foi : celui qui arrive après un rembobinage doit se
+   poser au même endroit que les autres, pas au début. */
+function positionDepart(){
+  const d = ETAT, c = d.mediaCmd, t = (Date.now()+DERIVE)/1000;
+  if(c && c.seq){
+    CMD_SEQ = c.seq;
+    return {pos: Math.max(0, c.pos + (c.playing ? t - c.at : 0)), joue: !!c.playing};
+  }
+  return {pos: Math.max(0, t - d.mediaStart), joue: true};
+}
+
+/* L'animateur a rembobiné, avancé, mis en pause ou relancé. On recale le
+   lecteur en place sans le remonter, sinon le son repartirait de zéro. */
+function suivreMedia(){
+  const c = ETAT && ETAT.mediaCmd;
+  if(!c || !c.seq || c.seq === CMD_SEQ) return;
+  const hote = $("#media");
+  const el = hote && hote.querySelector("video,audio");
+  if(!el) return;                      /* image ou YouTube : rien à recaler */
+  CMD_SEQ = c.seq;
+  const vise = Math.max(0, c.pos + (c.playing ? (Date.now()+DERIVE)/1000 - c.at : 0));
+  try{
+    /* Sauter pour un écart qu'on n'entend pas ne ferait que hacher la lecture. */
+    if(Math.abs(el.currentTime - vise) > 0.7 && vise < (el.duration || 1e9)) el.currentTime = vise;
+    if(c.playing) lancer(el, hote); else el.pause();
+  }catch(e){}
+}
+
+function appliqueVolume(){
+  document.querySelectorAll("#media video, #media audio").forEach(el=>{
+    try{ el.volume = VOLUME; }catch(e){}
+  });
+}
+
+/* Le curseur vit dans #media : il suit le lecteur quand celui-ci survit à un
+   re-rendu, et s'en va avec lui. */
+function ajouteVolume(hote){
+  const b = document.createElement("div");
+  b.className = "volume";
+  b.innerHTML = '<label for="vol">Volume</label>'+
+    '<input type="range" id="vol" min="0" max="1" step="0.02" value="'+VOLUME+'">'+
+    '<span class="val" id="volVal">'+Math.round(VOLUME*100)+' %</span>';
+  hote.appendChild(b);
+  const c = b.querySelector("#vol"), t = b.querySelector("#volVal");
+  c.oninput = ()=>{
+    const v = parseFloat(c.value);
+    VOLUME = (v >= 0 && v <= 1) ? v : 1;
+    t.textContent = Math.round(VOLUME*100)+' %';
+    try{ localStorage.setItem(CLE_VOL, String(VOLUME)); }catch(e){}
+    appliqueVolume();
+  };
+}
+
 function monterMedia(){
   const hote = $("#media"), d = ETAT, m = d.media;
   if(!hote || (!m && !d.mediaUrl)) return;
@@ -520,7 +698,7 @@ function monterMedia(){
       "…</div>";
     return;
   }
-  const decalage = Math.max(0, (Date.now()+DERIVE)/1000 - d.mediaStart);
+  const dep = positionDepart(), decalage = dep.pos;
 
   /* Lien externe : l'animateur a collé une adresse plutôt qu'importé un
      fichier. On démarre là où il en est, mais le navigateur du joueur peut
@@ -535,14 +713,16 @@ function monterMedia(){
         'src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(yt)+
         '?autoplay=1&start='+Math.floor(decalage)+'&controls=1&rel=0&modestbranding=1"></iframe>'+
         '<div class="masque"><span>♪</span></div></div>'+
-        '<div class="note">Si le son ne démarre pas, touche le cadre une fois.</div>';
+        '<div class="note">Si le son ne démarre pas, touche le cadre une fois. '+
+        'Le volume se règle dans le lecteur.</div>';
       return;
     }
     if(yt){
       hote.innerHTML = '<iframe allow="autoplay; encrypted-media; fullscreen" allowfullscreen '+
         'src="https://www.youtube-nocookie.com/embed/'+encodeURIComponent(yt)+
         '?autoplay=1&start='+Math.floor(decalage)+'&controls=0&rel=0&modestbranding=1&disablekb=1"></iframe>'+
-        '<div class="note">Si rien ne démarre, touche la vidéo une fois.</div>';
+        '<div class="note">Si rien ne démarre, touche la vidéo une fois. '+
+        'Le volume se règle dans le lecteur.</div>';
       return;
     }
     if(genre === "image"){
@@ -553,9 +733,11 @@ function monterMedia(){
     hote.innerHTML = '<'+balise+' id="ext" playsinline preload="auto" src="'+esc(d.mediaUrl)+'"></'+balise+'>'+
       '<div class="note" id="extNote">Lecture en cours…</div>';
     const el = $("#ext");
+    ajouteVolume(hote);
+    appliqueVolume();
     el.onloadedmetadata = ()=>{
       if(decalage > 0 && decalage < (el.duration||1e9)) el.currentTime = decalage;
-      lancer(el, hote);
+      if(dep.joue) lancer(el, hote);
     };
     el.onerror = ()=>{ const n = $("#extNote"); if(n) n.textContent = "Média indisponible depuis ce lien."; };
     return;
@@ -572,9 +754,11 @@ function monterMedia(){
        personne ne peut la rembobiner. Elle disparaît à la fin. */
     hote.innerHTML = '<video id="vid" playsinline preload="auto" src="'+src+'"></video>';
     const v = $("#vid");
+    ajouteVolume(hote);
+    appliqueVolume();
     v.onloadedmetadata = ()=>{
       if(decalage > 0 && decalage < (v.duration||1e9)) v.currentTime = decalage;
-      lancer(v, hote);
+      if(dep.joue) lancer(v, hote);
     };
     v.onended = ()=>{ hote.innerHTML = '<div class="done">Extrait terminé</div>'; };
     return;
@@ -582,9 +766,11 @@ function monterMedia(){
   hote.innerHTML = '<audio id="aud" preload="auto" src="'+src+'"></audio>'+
                    '<div class="note" id="audNote">Lecture en cours…</div>';
   const a = $("#aud");
+  ajouteVolume(hote);
+  appliqueVolume();
   a.onloadedmetadata = ()=>{
     if(decalage > 0 && decalage < (a.duration||1e9)) a.currentTime = decalage;
-    lancer(a, hote);
+    if(dep.joue) lancer(a, hote);
   };
   a.onended = ()=>{ const n=$("#audNote"); if(n) n.textContent = "Extrait terminé"; };
 }
@@ -600,6 +786,110 @@ function lancer(el, hote){
     hote.appendChild(b);
   });
 }
+
+/* ------------------------------------------------ son du buzz */
+let SON = null;
+
+/* Beaucoup de navigateurs n'ouvrent le son qu'après un geste du joueur : on
+   profite du premier clic ou de la première touche pour réveiller le contexte. */
+function reveilleSon(){
+  try{
+    const C = window.AudioContext || window.webkitAudioContext;
+    if(!C) return null;
+    if(!SON) SON = new C();
+    if(SON.state === "suspended") SON.resume().catch(()=>{});
+    return SON;
+  }catch(e){ return null; }
+}
+document.addEventListener("pointerdown", reveilleSon);
+document.addEventListener("keydown", reveilleSon);
+
+/* Deux notes fabriquées à la volée : aucun fichier à charger, donc le signal
+   part tout de suite, même sur une connexion poussive. */
+/* Trois notes descendantes quand le temps tombe : l'animateur a la même
+   sonnerie sur sa console, mais les joueurs qui ne sont pas en vocal avec lui
+   ne l'entendraient jamais. */
+function sonFin(){
+  const ctx = reveilleSon();
+  if(!ctx) return;
+  try{
+    const t0 = ctx.currentTime, fort = Math.max(0.0001, 0.2 * VOLUME);
+    [[880, 0], [660, 0.16], [440, 0.32]].forEach(n=>{
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = t0 + n[1];
+      o.type = "triangle";
+      o.frequency.value = n[0];
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(fort, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + 0.18);
+    });
+  }catch(e){}
+}
+
+function sonBuzz(){
+  const ctx = reveilleSon();
+  if(!ctx) return;
+  try{
+    const t0 = ctx.currentTime, fort = Math.max(0.0001, 0.22 * VOLUME);
+    [[740, 0], [1180, 0.13]].forEach(n=>{
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = t0 + n[1];
+      o.type = "triangle";
+      o.frequency.value = n[0];
+      /* Rampes exponentielles : une attaque franche claquerait dans le casque. */
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(fort, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + 0.15);
+    });
+  }catch(e){}
+}
+
+function suivreBuzz(){
+  const n = (ETAT && ETAT.buzzSeq) || 0;
+  /* Au premier passage on note la valeur sans sonner : celui qui arrive en
+     cours de partie n'a pas à entendre un buzz déjà passé. */
+  if(BUZZ_VU !== null && n > BUZZ_VU) sonBuzz();
+  BUZZ_VU = n;
+}
+
+/* ------------------------------------------------ chat */
+function majChat(){
+  const liste = $("#chatListe"), msgs = (ETAT && ETAT.chat) || [];
+  $("#chat").hidden = false;
+  const sig = msgs.length + "|" + (msgs.length ? msgs[msgs.length-1].id : "");
+  if(sig === CHAT_VU) return;     /* rien de neuf : on ne touche à rien */
+  CHAT_VU = sig;
+  /* Si le joueur est remonté lire un message plus haut, on ne le redescend
+     pas de force. Le champ, lui, n'est jamais reconstruit : pas de focus volé. */
+  const enBas = liste.scrollHeight - liste.scrollTop - liste.clientHeight < 40;
+  liste.innerHTML = msgs.length
+    ? msgs.map(m =>
+        '<div class="chat-msg'+(m.role === "anim" ? " anim" : "")+'">'+
+        '<span class="chat-nom">'+esc(m.name || (m.role === "anim" ? "Animateur" : "?"))+'</span>'+
+        '<span class="chat-texte">'+esc(m.text)+'</span></div>').join("")
+    : '<div class="chat-vide">Personne n’a encore écrit.</div>';
+  if(enBas) liste.scrollTop = liste.scrollHeight;
+}
+
+async function chatEnvoie(){
+  const champ = $("#chatTexte"), texte = (champ.value || "").trim();
+  if(!texte || !ME.playerId) return;
+  champ.value = "";
+  try{
+    const r = await fetch("/api/chat?room="+encodeURIComponent(ME.code), {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({playerId:ME.playerId, text:texte})
+    });
+    if(!r.ok) throw 0;
+  }catch(e){
+    /* Message perdu : on le rend au joueur plutôt que de l'effacer. */
+    if(!champ.value) champ.value = texte;
+  }
+}
+$("#chatGo").onclick = chatEnvoie;
+$("#chatTexte").onkeydown = e => { if(e.key === "Enter") chatEnvoie(); };
 
 /* ------------------------------------------------ démarrage */
 if(ME.playerId && ME.code){

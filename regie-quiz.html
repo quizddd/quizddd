@@ -609,6 +609,70 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
 }
 
 /* ============================================================
+   DISCUSSION — le panneau latéral de la console
+   ============================================================ */
+/* La scène ne connaît pas la discussion : c'est la présence du panneau qui
+   fait passer la vue en deux colonnes, sinon rien ne bouge. */
+.play:has(> .chat-panel){
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:minmax(0,1fr) auto;
+}
+.play:has(> .chat-panel) > .stage-wrap{grid-row:1; grid-column:1}
+.play:has(> .chat-panel) > .chat-panel{grid-row:1; grid-column:2; margin:12px 12px 12px 0}
+.play:has(> .chat-panel) > .console{grid-row:2; grid-column:1/-1}
+/* Filet : si la scène et la discussion sont réunies dans un conteneur, il
+   devient la rangée plutôt que d'empiler et d'écraser la scène. */
+.play > div:has(> .stage-wrap):has(> .chat-panel){flex:1; min-height:0; display:flex; gap:12px}
+.play > div:has(> .stage-wrap):has(> .chat-panel) > .stage-wrap{flex:1; min-width:0}
+
+.chat-panel{
+  width:300px; flex:none; min-height:0; overflow:hidden;
+  display:flex; flex-direction:column;
+  background:var(--surface); border:1px solid var(--line-soft);
+  border-radius:var(--r-l); box-shadow:var(--shadow-1);
+}
+.chat-panel .chat-titre{
+  flex:none; padding:11px 14px 9px; border-bottom:1px solid var(--line-soft);
+  font-family:var(--f-display); font-size:.82rem; font-weight:600;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--text-3);
+}
+/* Un message arrivé pendant que l'animateur regarde la scène doit se voir
+   sans qu'il ait à surveiller le fil. */
+.chat-panel .chat-titre.a-lire{color:var(--gold)}
+.chat-panel .chat-titre.a-lire::after{
+  content:attr(data-neufs); margin-left:8px; padding:1px 7px;
+  border-radius:999px; background:var(--gold); color:#1a1408;
+  font-size:.72rem; font-weight:700; letter-spacing:0;
+}
+
+.chat-liste{
+  flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin;
+  display:flex; flex-direction:column; gap:8px; padding:12px 13px;
+}
+.chat-msg{
+  padding:7px 10px; border-radius:var(--r-m);
+  background:var(--surface-2); border:1px solid var(--line-soft);
+  animation:rise .18s ease both;
+}
+.chat-msg.anim{background:var(--gold-dim); border-color:var(--gold)}
+.chat-nom{
+  display:block; margin-bottom:2px; font-family:var(--f-display);
+  font-size:.72rem; font-weight:600; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.chat-msg.anim .chat-nom{color:var(--gold-text)}
+/* Un pseudo ou un lien collé sans espace ne doit jamais élargir la colonne. */
+.chat-texte{font-size:.92rem; line-height:1.45; color:var(--text-2); overflow-wrap:anywhere}
+.chat-msg.anim .chat-texte{color:var(--text)}
+.chat-saisie{
+  flex:none; display:flex; align-items:center; gap:8px;
+  padding:10px 12px 12px; border-top:1px solid var(--line-soft);
+}
+.chat-saisie input{flex:1; min-width:0; padding:8px 11px; font-size:.9rem}
+.chat-saisie .btn{flex:none}
+
+/* ============================================================
    PODIUM
    ============================================================ */
 .podium{display:flex; align-items:flex-end; justify-content:center; gap:14px; margin:34px 0 8px; min-height:220px}
@@ -680,8 +744,19 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
   *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
   .marquee.live{animation:none}
 }
+/* Sous cette largeur, garder deux colonnes rognerait la scène, qui est ce que
+   la salle regarde : la discussion passe dessous, sur toute la largeur. */
+@media (max-width:1100px){
+  .play:has(> .chat-panel){display:flex; flex-direction:column}
+  .play:has(> .chat-panel) > .chat-panel{margin:0 12px 12px}
+  .play > div:has(> .stage-wrap):has(> .chat-panel){flex-direction:column}
+  .chat-panel{width:auto; max-height:min(34vh,300px)}
+  .chat-liste{padding:10px 12px}
+}
 @media (max-width:640px){
   .wrap{padding:20px 14px 56px}
+  .play:has(> .chat-panel) > .chat-panel{margin:0 10px 10px}
+  .chat-panel{max-height:min(30vh,240px)}
   .stage{padding:22px 16px}
   .tcard{width:158px}
   .appbar{padding:8px 12px}
@@ -1228,6 +1303,11 @@ function renderQForm(){
     '<span class="track" style="margin-top:2px"></span><span class="txt"><strong>Question au buzzer</strong>'+
     '<br><span class="hint">Les joueurs ne voient qu\'un bouton BUZZ. Le premier qui clique est le seul à pouvoir répondre — '+
     'les autres sont bloqués jusqu\'à ce que tu rendes la main.</span></span></label>'+
+    '<hr class="rule">'+
+    '<label class="switch" style="align-items:flex-start"><input type="checkbox" id="fHide"'+(q.hideText?" checked":"")+'>'+
+    '<span class="track" style="margin-top:2px"></span><span class="txt"><strong>Ne pas afficher l\'énoncé tout de suite</strong>'+
+    '<br><span class="hint">Pour laisser d\'abord regarder une image ou une vidéo, ou pour poser la question à l\'oral '+
+    'sur un buzzer. Tu affiches l\'énoncé quand tu le décides, depuis l\'onglet Animer.</span></span></label>'+
   '</div>'+
 
   '<div class="panel">'+
@@ -1252,6 +1332,7 @@ function renderQForm(){
   };
   $("#fNote").oninput = e => { q.note = e.target.value; touch(); };
   $("#fBuzz").onchange = e => { q.buzzMode = e.target.checked; touch(); renderRail(); };
+  $("#fHide").onchange = e => { q.hideText = e.target.checked; touch(); };
   $("#fPts").oninput = e => { q.points = e.target.value===""?null:clamp(Number(e.target.value),0,999); touch(); refreshBadges(); };
   $("#fTim").oninput = e => { q.timer  = e.target.value===""?null:clamp(Number(e.target.value),0,3600); touch(); refreshBadges(); };
   $$("#typeSeg button").forEach(b=> b.onclick = ()=>{ q.type = b.dataset.t; touch(); renderRail(); renderQForm(); });
@@ -1682,7 +1763,8 @@ let AUDIO_CTX = null, VIZ_RAF = null, VIZ_ANALYSER = null;
 
 function initPlay(){
   const list = flat(S.quiz);
-  return { i:0, phase:"question", left:0, running:false, endAt:0, buzzes:[], blur:null, shown:false, peek:false };
+  return { i:0, phase:"question", left:0, running:false, endAt:0, buzzes:[], blur:null, shown:false, peek:false,
+           questionCachee: !!(list.length && list[0].q.hideText) };
 }
 const curItem = ()=> {
   const list = flat(S.quiz);
@@ -1703,10 +1785,17 @@ function viewPlay(){
   const it = curItem();
   const pts = qPoints(it.q, it.round, quiz);
   const tim = qTimer(it.q, quiz);
-  if(p.blur === null)
-    p.blur = (it.q.media.kind==="image" || it.q.media.kind==="video") ? (it.q.media.blur||0) : 0;
+  /* On reprend le flou de départ quand il vient d'être modifié dans la fiche
+     de la question — sans écraser ce que l'animateur règle au curseur. */
+  const flouFiche = (it.q.media.blur || 0);
+  if(p.blur === null || p.blurFiche !== flouFiche)
+    p.blur = (it.q.media.kind==="image" || it.q.media.kind==="video") ? flouFiche : 0;
+  p.blurFiche = flouFiche;
   if(!p.running && !p.endAt) p.left = tim;
 
+  /* On remplace tout l'écran : un lecteur laissé derrière continuerait de
+     jouer sans que rien ne puisse plus l'atteindre. */
+  stopMedia();
   MAIN.innerHTML =
   '<div class="play">'+
     '<div class="stage-wrap">'+
@@ -1722,6 +1811,19 @@ function viewPlay(){
       '<div class="buzz-banner" id="buzzBanner" hidden></div>'+
       '<div class="stage" id="stage"></div>'+
     '</div>'+
+    /* Le fil n'existe que s'il y a un serveur en face : hors ligne, la scène
+       garde toute la largeur. */
+    (typeof partieActive==="function" && partieActive()
+      ? '<aside class="chat-panel" id="chatPanel">'+
+          '<div class="chat-titre" id="chatTitre">Discussion</div>'+
+          '<div class="chat-liste" id="chatListe"></div>'+
+          '<div class="chat-saisie">'+
+            '<input type="text" id="chatMot" maxlength="300" autocomplete="off" '+
+              'placeholder="Écrire aux joueurs…" aria-label="Message aux joueurs">'+
+            '<button class="btn btn-gold btn-sm" id="chatGo">Envoyer</button>'+
+          '</div>'+
+        '</aside>'
+      : "")+
     '<div class="console" id="console">'+
       '<div class="transport">'+
         '<button class="btn" id="tPrev" title="Question précédente"'+(p.i===0?" disabled":"")+'>◀</button>'+
@@ -1733,6 +1835,13 @@ function viewPlay(){
           : '<span class="pill">sans chrono</span>')+
         '<span class="spacer"></span>'+
         (quiz.settings.peek && p.phase==="question" ? '<button class="btn btn-ghost" id="tPeek">Aperçu réponse</button>' : "")+
+        /* Après un rechargement de la console, l'énoncé peut être masqué chez
+           les joueurs sans que la fiche le demande : le bouton doit rester là
+           pour le remettre. */
+        (p.questionCachee || it.q.hideText || (typeof PARTIE!=="undefined" && PARTIE.questionCachee)
+          ? '<button class="btn btn-outline" id="tShowQ">'+
+            (p.questionCachee ? "Afficher la question" : "Masquer la question")+'</button>' : "")+
+        (it.q.buzzMode ? '<button class="btn btn-ghost" id="tBuzzReset">Réinitialiser les buzz</button>' : "")+
         (typeof PARTIE!=="undefined" && PARTIE.buzzMode && PARTIE.buzzGagnant
           ? '<button class="btn btn-rose" id="tPass">Rendre la main</button>' : "")+
         (typeof partieActive==="function" && partieActive()
@@ -1749,6 +1858,7 @@ function viewPlay(){
   renderStage();
   renderRail2();
   renderBuzzBanner();
+  renderChat();
   syncTimer();
 
   $("#tPrev").onclick = ()=> gotoQ(p.i-1);
@@ -1757,10 +1867,28 @@ function viewPlay(){
   if($("#tPlus"))  $("#tPlus").onclick  = ()=> addTime(5);
   if($("#tReset")) $("#tReset").onclick = resetTimer;
   if($("#tReveal"))$("#tReveal").onclick= reveal;
-  if($("#tHide"))  $("#tHide").onclick  = ()=>{ p.phase="question"; viewPlay(); };
+  if($("#tHide"))  $("#tHide").onclick  = ()=>{
+    p.phase="question";
+    if(typeof partieMasqueReponse === "function") partieMasqueReponse();
+    viewPlay();
+  };
   if($("#tPeek"))  $("#tPeek").onclick  = togglePeek;
   if($("#tPass"))  $("#tPass").onclick  = partieRendLaMain;
   if($("#tStop"))  $("#tStop").onclick  = arreterPartie;
+  if($("#tShowQ")) $("#tShowQ").onclick = ()=>{
+    p.questionCachee = !p.questionCachee;
+    if(typeof partieMontreQuestion === "function") partieMontreQuestion(p.questionCachee);
+    viewPlay();
+  };
+  if($("#tBuzzReset")) $("#tBuzzReset").onclick = ()=>{
+    if(typeof partieBuzzReset === "function") partieBuzzReset();
+    /* Le serveur ne renverra plus ces buzz : sans effacer la liste ici, les
+       cartes garderaient l'ordre du tour précédent. */
+    p.buzzes = [];
+    renderRail2(); renderBuzzBanner();
+    toast("Les buzz sont rouverts à tout le monde.","good");
+  };
+  brancheChat();
 
   const cons = $("#console");
   if(cons) document.documentElement.style.setProperty("--console-h", cons.offsetHeight+"px");
@@ -1779,18 +1907,73 @@ function renderBuzzBanner(){
   }
 }
 
+/* Le fil de discussion. Il est redessiné à chaque rafraîchissement, donc il ne
+   touche à rien tant qu'aucun message n'est arrivé, et il ne recolle en bas que
+   si l'animateur y était déjà : sinon relire un message ancien serait
+   impossible, le fil sautant sous les yeux à chaque tour de boucle. */
+let chatVu = 0;
+function renderChat(){
+  const liste = $("#chatListe");
+  if(!liste) return;
+  const fil = (typeof PARTIE !== "undefined" && PARTIE.chat) ? PARTIE.chat : [];
+  const sig = fil.length + ":" + (fil.length ? fil[fil.length-1].id : 0);
+  majPastilleChat(fil);
+  if(liste.dataset.sig === sig) return;
+  const enBas = liste.scrollHeight - liste.scrollTop - liste.clientHeight < 32;
+  liste.innerHTML = fil.length
+    ? fil.map(m =>
+        '<div class="chat-msg'+(m.role==="anim" ? " anim" : "")+'">'+
+          '<span class="chat-nom">'+esc(m.name || "?")+'</span>'+
+          '<span class="chat-texte">'+esc(m.text || "")+'</span>'+
+        '</div>').join("")
+    : '<p class="hint">Personne n\'a encore écrit.</p>';
+  liste.dataset.sig = sig;
+  if(enBas) liste.scrollTop = liste.scrollHeight;
+}
+/* L'animateur regarde la scène, pas le fil. Sans repère, un message posté
+   pendant une question lui échappe complètement. */
+function majPastilleChat(fil){
+  const titre = $("#chatTitre");
+  if(!titre) return;
+  const dernier = fil.length ? fil[fil.length-1].id : 0;
+  const neufs = fil.filter(m => m.id > chatVu && m.role !== "anim").length;
+  titre.dataset.neufs = neufs || "";
+  titre.classList.toggle("a-lire", neufs > 0);
+  if(document.activeElement === $("#chatMot")) chatVu = dernier;
+}
+
+function brancheChat(){
+  const champ = $("#chatMot"), envoi = $("#chatGo");
+  if(!champ || !envoi) return;
+  const liste = $("#chatListe");
+  const lu = ()=>{
+    const fil = (typeof PARTIE !== "undefined" && PARTIE.chat) ? PARTIE.chat : [];
+    chatVu = fil.length ? fil[fil.length-1].id : 0;
+    majPastilleChat(fil);
+  };
+  champ.onfocus = lu;
+  if(liste) liste.onclick = lu;
+  const envoie = ()=>{
+    const texte = champ.value.trim();
+    if(!texte) return;
+    champ.value = "";
+    if(typeof partieChatEnvoie === "function") partieChatEnvoie(texte);
+  };
+  envoi.onclick = envoie;
+  champ.onkeydown = e => { if(e.key === "Enter"){ e.preventDefault(); envoie(); } };
+}
+
 /* Coupe proprement le média en cours avant de reconstruire la scène. */
 function stopMedia(){
-  const a = document.querySelector("#aud");
-  if(a){
-    try{ a.pause(); }catch(e){}
-    a.onloadedmetadata = a.ontimeupdate = a.onplay = a.onpause = a.onended = null;
-  }
-  const v = document.querySelector("#stageVid");
-  if(v && v.tagName === "VIDEO"){
-    try{ v.pause(); }catch(e){}
-    v.onloadedmetadata = v.ontimeupdate = null;
-  }
+  /* On débranche avant de couper : la pause déclenche un évènement, et il
+     partirait vers les joueurs avec la position de l'extrait précédent.
+     On coupe TOUT ce qui joue sur la scène — question et révélation — car un
+     élément retiré du DOM continue de jouer dans Chrome et Edge. */
+  document.querySelectorAll("#stage audio, #stage video").forEach(el=>{
+    el.onloadedmetadata = el.ontimeupdate = el.onplay = el.onpause = null;
+    el.onended = el.onseeked = el.onvolumechange = null;
+    try{ el.pause(); }catch(e){}
+  });
   stopVisualizer();
 }
 
@@ -1809,11 +1992,18 @@ async function renderStage(){
       : '<div class="media-stage" id="mstage"></div>';
   }
   h += '<h2 class="qtext'+(q.media.kind!=="none"?" small":"")+'">'+esc(q.text||"…")+'</h2>';
+  /* L'animateur lit toujours son énoncé : ce repère lui rappelle seulement que
+     les joueurs, eux, ont l'écran vide. */
+  if(p.questionCachee) h += '<p class="hint">Énoncé masqué chez les joueurs</p>';
 
   if(q.type === "qcm"){
-    h += '<div class="choices-stage">'+ q.choices.filter(c=>c.text.trim()).map((c,i)=>
-      '<div class="choice-stage'+(revealed ? (c.correct?" good":" bad") : "")+'">'+
-        '<span class="lt">'+LETTERS[i]+'</span><span>'+esc(c.text)+'</span></div>').join("")+'</div>';
+    /* La lettre vient du rang d'origine : le serveur numerote avant de retirer
+       les propositions vides, l'animateur doit annoncer les memes lettres. */
+    h += '<div class="choices-stage">'+ q.choices.map((c,i)=>({c:c,i:i}))
+      .filter(x=>x.c.text.trim()).map(x=>
+        '<div class="choice-stage'+(revealed ? (x.c.correct?" good":" bad") : "")+'">'+
+          '<span class="lt">'+LETTERS[x.i]+'</span><span>'+esc(x.c.text)+'</span></div>')
+      .join("")+'</div>';
   }
   if(revealed){
     const ans = q.type==="qcm"
@@ -1860,7 +2050,19 @@ function brancheFlou(el){
   if(net) net.onclick = ()=>{ s.value = 0; applique(0); };
 }
 
+/* Rembobiner, mettre en pause, relancer : ce que l'animateur fait de sa lecture
+   doit arriver chez les joueurs, sinon ils écoutent un autre passage que la
+   salle. Une iframe YouTube ne se pilote pas sans son API : elle reste libre. */
+function suitLecture(el){
+  if(typeof partieMediaCmd === "function") partieMediaCmd(el.currentTime, !el.paused);
+}
+
 async function mountMedia(host, m, isMain){
+  /* Le média de la question et celui de la révélation portent les mêmes
+     identifiants. On cherche donc TOUJOURS dans le conteneur : sinon la
+     révélation pilote le lecteur de la question, et l'extrait précédent
+     continue de jouer par-dessus la question suivante. */
+  const $m = sel => host.querySelector(sel);
   const src = m.assetId ? await assetURL(m.assetId) : m.url;
   if(!src){
     host.innerHTML = '<div class="media-hidden">Média introuvable — il a peut-être été perdu au rechargement.</div>';
@@ -1871,7 +2073,7 @@ async function mountMedia(host, m, isMain){
   if(m.kind === "image"){
     host.innerHTML = '<img id="stageImg" alt="Image de la question" src="'+esc(src)+'" style="filter:blur('+(isMain?S.play.blur:0)+'px)">'+
       (isMain ? curseurFlou(m) : "");
-    brancheFlou($("#stageImg"));
+    if(isMain) brancheFlou($m("#stageImg"));
     return;
   }
   if(m.kind === "video"){
@@ -1881,13 +2083,13 @@ async function mountMedia(host, m, isMain){
         'src="https://www.youtube-nocookie.com/embed/'+esc(yt)+'?rel=0&modestbranding=1'+(m.start?"&start="+Math.round(m.start):"")+'"></iframe>'+
         (isMain ? curseurFlou(m) : "")+
         '<p class="hint">Lecture YouTube — tes joueurs la reçoivent aussi, mais devront peut-être toucher la vidéo pour la lancer. Pour une diffusion vraiment synchronisée, importe plutôt le fichier.</p>';
-      brancheFlou($("#stageVid"));
+      if(isMain) brancheFlou($m("#stageVid"));
     } else {
       host.innerHTML = '<video id="stageVid" controls playsinline src="'+esc(src)+'" '+
         'style="filter:blur('+(isMain?S.play.blur:0)+'px)"></video>'+
         (isMain ? curseurFlou(m) : "");
-      const v = $("#stageVid");
-      brancheFlou(v);
+      const v = $m("#stageVid");
+      if(isMain) brancheFlou(v);
       v.volume = VOLUME;
       v.onvolumechange = ()=> setVolume(v.volume);
       v.onloadedmetadata = ()=>{
@@ -1898,6 +2100,7 @@ async function mountMedia(host, m, isMain){
         if(m.stop && v.currentTime >= m.stop){ v.pause(); finishVideo(host, v, m, isMain); }
       };
       v.onended = ()=> finishVideo(host, v, m, isMain);
+      if(isMain) v.onseeked = v.onplay = v.onpause = ()=> suitLecture(v);
     }
     return;
   }
@@ -1935,8 +2138,8 @@ async function mountMedia(host, m, isMain){
   /* Les noeuds sont capturés une fois : l'audio détaché peut encore émettre
      des évènements après un changement de question, et une requête différée
      renverrait null. */
-  const a = $("#aud"), btn = $("#pPlay"), fill = $("#pFill"), seek = $("#pSeek");
-  const cur = $("#pCur"), dur = $("#pDur");
+  const a = $m("#aud"), btn = $m("#pPlay"), fill = $m("#pFill"), seek = $m("#pSeek");
+  const cur = $m("#pCur"), dur = $m("#pDur");
   a.volume = VOLUME;
   a.onloadedmetadata = ()=>{
     if(dur) dur.textContent = fmtClock(m.stop ? Math.min(m.stop,a.duration) : a.duration);
@@ -1949,16 +2152,21 @@ async function mountMedia(host, m, isMain){
     if(cur) cur.textContent = fmtClock(Math.max(0, a.currentTime-from));
     if(m.stop && a.currentTime >= m.stop){ a.pause(); }
   };
-  a.onplay  = ()=>{ btn.textContent = "❚❚"; startVisualizer(a); };
-  a.onpause = ()=>{ btn.textContent = "▶"; };
+  a.onplay  = ()=>{ btn.textContent = "❚❚"; if(isMain){ startVisualizer(a); suitLecture(a); } };
+  a.onpause = ()=>{ btn.textContent = "▶"; if(isMain) suitLecture(a); };
   a.onended = ()=>{ btn.textContent = "▶"; };
+  if(isMain) a.onseeked = ()=> suitLecture(a);
   btn.onclick = ()=> a.paused ? a.play().catch(()=>toast("Lecture bloquée par le navigateur.","bad")) : a.pause();
   seek.onclick = e => {
     const r = seek.getBoundingClientRect();
     const from = m.start||0, to = m.stop || a.duration || 0;
     a.currentTime = from + (to-from) * clamp((e.clientX-r.left)/r.width, 0, 1);
   };
-  $("#pVol").oninput = e => { setVolume(e.target.value); a.volume = VOLUME; };
+  $m("#pVol").oninput = e => { setVolume(e.target.value); a.volume = VOLUME; };
+  /* Les joueurs démarrent dès que la question s'affiche : si l'animateur
+     devait cliquer, il entendrait l'extrait après eux, et son clic les
+     ferait tous repartir du début. */
+  if(isMain) autoPlay(a, host);
 }
 /* Lancement automatique. Le navigateur peut refuser une lecture sonore sans
    geste de l'utilisateur : dans ce cas on affiche un gros bouton plutot que de
@@ -2055,10 +2263,15 @@ function renderRail2(){
   const pts = qPoints(it.q, it.round, quiz);
   const half = Math.round(pts/2*2)/2;
 
+  const enLigne = typeof partieActive === "function" && partieActive();
+
   rail.innerHTML = quiz.teams.map(t=>{
     const aw = awardOf(quiz, t.id, it.q.id);
     const k = aw ? aw.verdict : null;
     const bz = p.buzzes.indexOf(t.id);
+    /* Une équipe n'est expulsable que si un joueur connecté se cache derrière :
+       les équipes saisies à la main n'ont personne à retirer. */
+    const j = enLigne ? PARTIE.joueurs.find(x=>x.teamId === t.id) : null;
     return '<div class="tcard'+(bz>=0?" buzzed":"")+'" style="--tc:'+esc(t.color)+'" data-t="'+t.id+'">'+
       (bz>=0 ? '<span class="buzz-badge">'+(bz+1)+'</span>' : "")+
       '<div class="thd"><span class="tname">'+esc(t.name)+'</span>'+
@@ -2075,6 +2288,8 @@ function renderRail2(){
         '<button data-d="-1" data-t="'+t.id+'" title="Malus">−1</button>'+
         '<button data-d="1" data-t="'+t.id+'" title="Bonus">+1</button>'+
         '<button data-more="'+t.id+'" title="Autre montant">…</button>'+
+        (j ? '<button data-kick="'+esc(j.userId)+'" data-nom="'+esc(j.name)+'" '+
+             'title="Retirer '+esc(j.name)+' de la partie">⏏</button>' : "")+
       '</div>'+
     '</div>';
   }).join("");
@@ -2097,6 +2312,15 @@ function renderRail2(){
     flashScore(b.dataset.t); renderRail2();
   });
   $$("[data-more]", rail).forEach(b=> b.onclick = ()=> customAdjustDialog(b.dataset.more, ()=>renderRail2()));
+  $$("[data-kick]", rail).forEach(b=> b.onclick = async ()=>{
+    const nom = b.dataset.nom;
+    if(!await confirmBox("Retirer ce joueur ?",
+        "<strong>"+esc(nom)+"</strong> sera déconnecté et devra rentrer le code du salon "+
+        "pour revenir. Son équipe et ses points restent au tableau.", "Retirer", true)) return;
+    if(typeof partieKick === "function") await partieKick(b.dataset.kick);
+    toast(nom+" a été retiré de la partie.","good");
+    renderRail2();
+  });
 }
 function flashScore(tid){
   const n = $('[data-sc="'+tid+'"]');
@@ -2111,6 +2335,9 @@ function gotoQ(i){
   stopTimer(true); stopMedia();
   const p = S.play;
   p.i = i; p.phase = "question"; p.buzzes = []; p.blur = null; p.shown = false; p.peek = false; p.endAt = 0;
+  /* Réglé avant l'affichage : la question part aux joueurs à la fin de
+     viewPlay(), et elle doit partir déjà masquée si la fiche le demande. */
+  p.questionCachee = !!list[i].q.hideText;
   viewPlay();
   if(S.quiz.settings.autoStart && qTimer(curItem().q, S.quiz) > 0) startTimer();
 }
@@ -2705,6 +2932,7 @@ const PARTIE = {
   code:"",              // code du salon, cinq lettres
   cle:"",               // code d'animateur, si le serveur en exige un
   joueurs:[], reponses:[], buzz:[], buzzMode:false, buzzGagnant:null,
+  chat:[], questionCachee:false, preQ:null, prePret:null,
   v:-1, derniereQ:null, derniereReveal:null, signatureEquipes:"", echecs:0
 };
 
@@ -2766,7 +2994,30 @@ function demandeCle(){
    seul moyen pour les joueurs de voir l'image ou d'entendre l'extrait sur
    leur propre écran, donc il part avec le message. */
 const EXT_MEDIA = {image:".png", audio:".mp3", video:".mp4"};
+const nomMedia = m => (m.name || "média") +
+  (/\.[a-z0-9]{2,4}$/i.test(m.name||"") ? "" : (EXT_MEDIA[m.kind] || ".bin"));
 const MAX_MEDIA = 48 * 1024 * 1024;
+
+/* Le média de la question suivante part pendant que celle-ci se joue. Sur une
+   connexion domestique, une vidéo met plusieurs secondes à monter : sans ça,
+   l'animateur annonce sa question devant un écran encore vide. */
+async function partiePreEnvoi(q){
+  if(!partieActive() || !q || !q.media || q.media.kind === "none" || !q.media.assetId) return;
+  if(PARTIE.preQ === q.id) return;
+  if(S.quiz && S.quiz.settings.mediasJoueurs === false) return;
+  PARTIE.preQ = q.id;
+  try{
+    const rec = await getAsset(q.media.assetId);
+    if(!rec || !rec.blob || rec.blob.size > MAX_MEDIA) return;
+    const fd = new FormData();
+    fd.append("payload", JSON.stringify({qid: q.id, mediaKind: q.media.kind}));
+    fd.append("media", rec.blob, nomMedia(q.media));
+    const r = await fetch(avecSalon("/api/premedia"), {method:"POST", body:fd, headers:enTetes()});
+    if(r.ok) PARTIE.prePret = q.id;
+  }catch(e){
+    PARTIE.preQ = null;   /* on retentera au prochain passage */
+  }
+}
 
 async function partieEnvoi(chemin, charge, m){
   if(!PARTIE.branchee) return null;
@@ -2776,6 +3027,12 @@ async function partieEnvoi(chemin, charge, m){
   if(!joindre && m && m.kind !== "none"){
     toast("Le média de cette question n'est pas envoyé aux joueurs. "+
           "Coche « Envoyer les médias aux joueurs » dans les Réglages.", "bad", 7000);
+  }
+  /* Déjà déposé pendant la question précédente : inutile de le renvoyer. */
+  if(chemin === "/api/question" && m && m.assetId && PARTIE.prePret === charge.id){
+    charge.mediaKind = m.kind;
+    PARTIE.prePret = null;
+    return partiePost(chemin, charge);
   }
   let blob = null;
   if(joindre && m && m.kind !== "none"){
@@ -2799,8 +3056,7 @@ async function partieEnvoi(chemin, charge, m){
   try{
     const fd = new FormData();
     fd.append("payload", JSON.stringify(charge));
-    fd.append("media", blob, (m.name || "media") +
-      (/\.[a-z0-9]{2,4}$/i.test(m.name||"") ? "" : (EXT_MEDIA[m.kind] || ".bin")));
+    fd.append("media", blob, nomMedia(m));
     const r = await fetch(avecSalon(chemin), {method:"POST", body:fd, headers:enTetes()});
     if(r.status === 401){ demandeCle(); return null; }
     if(r.ok) return await r.json();
@@ -2890,6 +3146,8 @@ async function partieBoucle(){
       PARTIE.buzz = s.buzz || [];
       PARTIE.buzzMode = !!s.buzzMode;
       PARTIE.buzzGagnant = s.buzzWinner || null;
+      PARTIE.chat = s.chat || [];
+      PARTIE.questionCachee = !!s.questionHidden;
 
       /* Après un rechargement de page, on adopte la question déjà publiée :
          sans cela on la renverrait en double. */
@@ -2987,6 +3245,7 @@ function partieRafraichit(){
     buzzVersConsole();
     if($("#rail2")) renderRail2();
     if(typeof renderBuzzBanner === "function") renderBuzzBanner();
+    if(typeof renderChat === "function") renderChat();
     const aBouton = !!$("#tPass");
     if(aBouton !== !!(PARTIE.buzzMode && PARTIE.buzzGagnant)) viewPlay();
   }
@@ -3004,6 +3263,13 @@ function buzzVersConsole(){
 }
 
 /* --------------------------------------- ce que la console pousse vers eux */
+/* Le flou visible chez l'animateur doit l'être chez les joueurs, même s'il a
+   été réglé après l'envoi de la question. */
+function partieFlouSuit(){
+  const v = S.play ? (S.play.blur || 0) : 0;
+  if(v !== flouEnvoye) partieFlou(v);
+}
+
 function partieSync(){
   if(!partieActive() || S.view!=="play" || !S.play) return;
   const it = curItem();
@@ -3016,13 +3282,18 @@ function partieSync(){
       id:q.id, index:S.play.i+1, total:flat(S.quiz).length, round:it.round.title,
       text:q.text, type:q.type, multi:!!q.multi, buzzMode:!!q.buzzMode,
       mediaHold: !!(q.media && q.media.hidden),
+      questionHidden: !!(q.hideText),
       points:qPoints(q, it.round, S.quiz), timer:qTimer(q, S.quiz),
-      blur: (q.media && q.media.blur) ? S.play.blur : 0,
+      blur: (q.media && q.media.blur) ? (flouEnvoye = S.play.blur || 0) : (flouEnvoye = 0),
       choices:q.choices.map(c=>({text:c.text}))
     }, q.media).then(r=>{
       if(!r) toast("La question n'a pas pu être envoyée aux joueurs.","bad",6000);
+      const suite = flat(S.quiz)[S.play.i + 1];
+      if(suite) partiePreEnvoi(suite.q);
     }).catch(()=> toast("La question n'a pas pu être envoyée aux joueurs.","bad",6000));
   }
+
+  partieFlouSuit();
 
   if(S.play.phase === "revealed" && PARTIE.derniereReveal !== q.id){
     PARTIE.derniereReveal = q.id;
@@ -3041,9 +3312,10 @@ const partiePousseEquipes = ()=>{ if(partieActive()) adopteJoueurs(); };
 
 /* Le flou change souvent quand l'animateur fait glisser le curseur : on
    n'envoie qu'un état toutes les 150 ms, le dernier faisant foi. */
-let flouEnAttente = null, flouMinuteur = null;
+let flouEnAttente = null, flouMinuteur = null, flouEnvoye = null;
 function partieFlou(v){
   flouEnAttente = v;
+  flouEnvoye = v;
   if(flouMinuteur) return;
   flouMinuteur = setTimeout(()=>{
     flouMinuteur = null;
@@ -3058,6 +3330,29 @@ function partieChrono(){
   partiePost("/api/chrono", { left: Math.max(0, S.play.left||0),
                               running: !!S.play.running });
 }
+
+/* Rembobiner ou mettre en pause ne sert à rien si les joueurs continuent leur
+   lecture dans leur coin : on leur donne la position, et ils s'y recalent.
+   Comme pour le flou, faire glisser le curseur produit une rafale d'appels :
+   un seul envoi toutes les 200 ms, le dernier état faisant foi. */
+let mediaEnAttente = null, mediaMinuteur = null;
+function partieMediaCmd(pos, joue){
+  mediaEnAttente = {pos: pos, playing: !!joue};
+  if(mediaMinuteur) return;
+  mediaMinuteur = setTimeout(()=>{
+    mediaMinuteur = null;
+    partiePost("/api/mediacmd", mediaEnAttente);
+  }, 200);
+}
+
+const partieKick           = playerId => partiePost("/api/kick", {playerId: playerId});
+/* Remasquer la reponse : sans ca elle reste affichee chez les joueurs et le
+   salon garde « reponses closes ». */
+const partieMasqueReponse = ()=>{ PARTIE.derniereReveal = null;
+                                  return partiePost("/api/unreveal", {}); };
+const partieBuzzReset      = ()=> partiePost("/api/buzzreset", {});
+const partieMontreQuestion = cachee => partiePost("/api/showquestion", {hidden: !!cachee});
+const partieChatEnvoie     = texte => partiePost("/api/chat", {text: texte});
 
 const partieFerme      = timeup => partiePost("/api/close", {timeup: !!timeup});
 const partieLanceMedia = ()=> partiePost("/api/mediastart", {});
