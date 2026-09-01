@@ -39,7 +39,7 @@ JOUEUR = os.path.join(HERE, "joueur.html")
 PORT = int(os.environ.get("PORT", "8777"))
 HOTE = os.environ.get("HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
 EN_LIGNE = bool(os.environ.get("PORT"))          # vrai chez un hebergeur
-VERSION = "2026-08-30 web-2"
+VERSION = "2026-09-01 avatars"
 
 # Code d'animateur, facultatif. Defini dans les variables d'environnement de
 # l'hebergeur (jamais dans le depot), il verrouille l'ouverture de parties :
@@ -54,9 +54,55 @@ MEMOIRE_MAX = 180 * 1024 * 1024
 INACTIF = 6 * 3600               # une partie oubliee expire au bout de 6 h
 LETTRES = "ABCDEFGHJKLMNPQRSTUVWXYZ"   # sans I ni O, illisibles a l'oral
 
+AV_N = 36                        # avatars dessines par le code, numerotes 0..35
+AVATAR_MAX = 400 * 1024          # une image du pack
+AVATAR_PACK_NB = 60              # images dans le pack d'un salon
+AVATAR_PACK_MAX = 12 * 1024 * 1024
+
 
 def say(*parts):
     print("  " + " ".join(str(p) for p in parts), flush=True)
+
+
+# ------------------------------------------------------------------ avatars
+def avatar_defaut(nom):
+    """Le pseudo decide de la figure : celui qui revient apres une coupure
+    retrouve la sienne, et deux ecrans affichent la meme."""
+    return "g:%d" % (sum(ord(c) for c in (nom or "")) % AV_N)
+
+
+def avatar_valide(salon, valeur, nom):
+    """Cette chaine arrive d'un navigateur : tout ce qui n'est pas un avatar
+    connu retombe sur celui du pseudo, sinon n'importe quoi finirait a
+    l'ecran de tout le monde."""
+    v = str(valeur or "").strip()[:64]
+    if v.startswith("g:"):
+        try:
+            n = int(v[2:])
+        except (TypeError, ValueError):
+            n = -1
+        if 0 <= n < AV_N:
+            return "g:%d" % n
+    elif v.startswith("c:"):
+        ident = v[2:]
+        if any(a["id"] == ident for a in salon.avatars):
+            return v
+    return avatar_defaut(nom)
+
+
+IMAGES_OK = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+
+def type_image(annonce, nom=""):
+    """Un <img> reste vide si le type ment. Surtout, on refuse le SVG : il est
+    resservi sur l'origine de l'application, ou le code animateur est range
+    dans le navigateur, et un SVG peut porter du script."""
+    t = (annonce or "").split(";")[0].strip().lower()
+    if t in IMAGES_OK:
+        return t
+    ext = os.path.splitext(nom or "")[1].lower()
+    return {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif": "image/gif", ".webp": "image/webp"}.get(ext, "image/png")
 
 
 # ------------------------------------------------------------------- salons
@@ -68,7 +114,9 @@ class Salon:
         self.version = 0
         self.cree = time.time()
         self.vu = time.time()
-        self.joueurs = {}        # pid -> {"name", "vu"}
+        self.joueurs = {}        # pid -> {"name", "vu", "avatar"}
+        self.avatars = []        # pack de l'animateur : [{"id","name","type","data"}]
+        self.avatar_seq = 0
         self.question = None     # version expurgee, sans la reponse
         self.reponses = {}       # qid -> {pid: {"value", "at", "order"}}
         self.media = None        # {"id", "kind", "name", "type", "data"}
@@ -96,14 +144,28 @@ class Salon:
         # sinon l'animateur reste plusieurs secondes devant un ecran vide.
         self.pre_media = None
 
-    def poids(self):
-        """Octets de media retenus par cette partie."""
+    def poids_media(self):
+        """Octets de media retenus par cette partie, et eux seuls : ce sont les
+        seuls que le menage sait relacher."""
         n = 0
         if self.media:
             n += len(self.media["data"])
         if self.pre_media:
             n += len(self.pre_media["data"])
         return n
+
+    def poids_avatars(self):
+        return sum(len(a["data"]) for a in self.avatars)
+
+    def poids(self):
+        """Tout ce que cette partie retient en memoire."""
+        return self.poids_media() + self.poids_avatars()
+
+    def avatar_de(self, pid):
+        j = self.joueurs.get(pid)
+        if not j:
+            return ""
+        return j.get("avatar") or avatar_defaut(j.get("name") or "")
 
     def touch(self):
         self.version += 1
@@ -122,7 +184,8 @@ class Salon:
         return {
             "v": self.version,
             "salon": {"code": self.code, "web": True},
-            "players": [{"userId": p, "name": j["name"], "teamId": j.get("team_id")}
+            "players": [{"userId": p, "name": j["name"], "teamId": j.get("team_id"),
+                         "avatar": self.avatar_de(p)}
                         for p, j in self.joueurs.items()],
             "question": ({"id": self.question["id"], "open": self.ouverte}
                          if self.question else None),
@@ -134,6 +197,7 @@ class Salon:
             "buzzWinner": (None if self.buzz_gagnant is None else
                            {"userId": self.buzz_gagnant,
                             "name": self.joueurs.get(self.buzz_gagnant, {}).get("name", "?")}),
+            "pack": [{"id": a["id"], "name": a["name"]} for a in self.avatars],
             "questionHidden": self.q_cachee,
             "chat": self.chat[-60:],
         }
@@ -150,6 +214,10 @@ class Salon:
             "code": self.code,
             "me": (self.joueurs.get(pid) or {}).get("name"),
             "players": sorted(j["name"] for j in self.joueurs.values()),
+            "avatars": {j.get("name", "?"): (j.get("avatar") or avatar_defaut(j.get("name") or ""))
+                        for j in self.joueurs.values()},
+            "pack": [{"id": a["id"], "name": a["name"]} for a in self.avatars],
+            "monAvatar": self.avatar_de(pid),
             "question": self.question_pour_joueur(),
             "questionHidden": self.q_cachee,
             "open": self.ouverte,
@@ -228,10 +296,14 @@ def menage():
     # plutot que de risquer l'arret brutal du serveur.
     total = sum(s.poids() for s in SALONS.values())
     if total > MEMOIRE_MAX:
-        for c, s in sorted(SALONS.items(), key=lambda kv: kv[1].vu):
+        anciens = sorted(SALONS.items(), key=lambda kv: kv[1].vu)
+        # D'abord les medias, qui se rechargent tout seuls a la question
+        # suivante. Les avatars ne partent qu'en dernier recours : les joueurs
+        # les perdraient pour de bon au milieu de la partie.
+        for c, s in anciens:
             if total <= MEMOIRE_MAX:
                 break
-            liberes = s.poids()
+            liberes = s.poids_media()
             if not liberes:
                 continue
             s.media = None
@@ -239,6 +311,19 @@ def menage():
             s.media_debut = 0
             total -= liberes
             say("Salon %s - medias liberes (memoire)" % c)
+        for c, s in anciens:
+            if total <= MEMOIRE_MAX:
+                break
+            liberes = s.poids_avatars()
+            if not liberes:
+                continue
+            s.avatars = []
+            for j in s.joueurs.values():
+                if str(j.get("avatar", "")).startswith("c:"):
+                    j["avatar"] = avatar_defaut(j.get("name") or "")
+            s.touch()
+            total -= liberes
+            say("Salon %s - avatars liberes (memoire)" % c)
 
     while len(SALONS) > SALON_MAX:
         vieux = min(SALONS.values(), key=lambda s: s.vu)
@@ -756,10 +841,16 @@ async def h_join(request):
         while nom.lower() in deja:
             nom = "%s %d" % (base, n)
             n += 1
-    s.joueurs[pid] = dict(s.joueurs.get(pid) or {}, name=nom, vu=time.time())
+    ancien = s.joueurs.get(pid) or {}
+    voulu = body.get("avatar")
+    if voulu is None:
+        voulu = ancien.get("avatar") or avatar_defaut(nom)
+    s.joueurs[pid] = dict(ancien, name=nom, vu=time.time(),
+                          avatar=avatar_valide(s, voulu, nom))
     s.touch()
     say("Salon %s - %s rejoint (%d joueurs)" % (s.code, nom, len(s.joueurs)))
-    return rep({"ok": True, "playerId": pid, "name": nom, "code": s.code})
+    return rep({"ok": True, "playerId": pid, "name": nom, "code": s.code,
+                "avatar": s.joueurs[pid]["avatar"]})
 
 
 async def h_play(request):
@@ -824,6 +915,91 @@ async def h_buzz_joueur(request):
     return rep({"ok": True})
 
 
+async def h_setavatar(request):
+    """Le joueur change de figure. Aucun code d'animateur ici : c'est son
+    choix a lui. Il faut seulement qu'il soit bien dans la partie."""
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False, "error": "salon inconnu"}, status=404)
+    body = await request.json()
+    pid = (body.get("playerId") or "").strip()
+    j = s.joueurs.get(pid)
+    if j is None:
+        return rep({"ok": False, "error": "Tu n'es plus dans la partie."}, status=403)
+    j["avatar"] = avatar_valide(s, body.get("avatar"), j.get("name") or "")
+    j["vu"] = time.time()
+    s.touch()
+    return rep({"ok": True, "avatar": j["avatar"]})
+
+
+async def h_avatarpack(request):
+    """L'animateur ajoute une image au pack du salon."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False, "error": "salon inconnu"}, status=404)
+    try:
+        body, media = await lire_corps(request)
+    except Exception:
+        return rep({"ok": False, "error": "envoi illisible"}, status=400)
+    if not media or not media["size"]:
+        return rep({"ok": False, "error": "aucune image"}, status=400)
+    if media["size"] > AVATAR_MAX:
+        return rep({"ok": False, "error": "image trop lourde"}, status=413)
+    if len(s.avatars) >= AVATAR_PACK_NB:
+        return rep({"ok": False, "error": "pack complet"}, status=409)
+    if s.poids_avatars() + media["size"] > AVATAR_PACK_MAX:
+        return rep({"ok": False, "error": "pack trop lourd"}, status=413)
+    s.avatar_seq += 1
+    ident = "a%d_%d" % (s.avatar_seq, int(time.time() * 1000) % 100000)
+    nom = (str(body.get("name") or media["name"] or "image")).strip()[:40] or "image"
+    s.avatars.append({"id": ident, "name": nom,
+                      "type": type_image(media["type"], media["name"]),
+                      "data": media["data"]})
+    s.touch()
+    menage()          # la memoire vient de grossir : on verifie le plafond
+    say("Salon %s - avatar « %s » ajoute au pack (%d images)" % (
+        s.code, nom, len(s.avatars)))
+    return rep({"ok": True, "id": ident})
+
+
+async def h_avatarpackdel(request):
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False, "error": "salon inconnu"}, status=404)
+    body = await request.json()
+    ident = (body.get("id") or "").strip()
+    reste = [a for a in s.avatars if a["id"] != ident]
+    if len(reste) == len(s.avatars):
+        return rep({"ok": False, "error": "image inconnue"}, status=404)
+    s.avatars = reste
+    # Ceux qui l'avaient choisie garderaient sinon un cadre vide toute la soiree.
+    perdu = "c:" + ident
+    for j in s.joueurs.values():
+        if j.get("avatar") == perdu:
+            j["avatar"] = avatar_defaut(j.get("name") or "")
+    s.touch()
+    say("Salon %s - avatar retire du pack (%d images)" % (s.code, len(s.avatars)))
+    return rep({"ok": True})
+
+
+async def h_avatarimg(request):
+    s = salon_de(request)
+    if s is None:
+        return web.Response(status=404, text="salon inconnu")
+    ident = request.query.get("id") or ""
+    for a in s.avatars:
+        if a["id"] == ident:
+            # Une image du pack ne change jamais : le navigateur peut la garder.
+            return web.Response(body=a["data"], content_type=a["type"],
+                                headers={"Cache-Control": "public, max-age=31536000, immutable",
+                                         "X-Content-Type-Options": "nosniff"})
+    return web.Response(status=404, text="avatar inconnu")
+
+
 async def h_media(request):
     s = salon_de(request)
     if s is None or s.media is None:
@@ -881,12 +1057,16 @@ def build_app():
     r.add_post("/api/mediacmd", h_mediacmd)
     r.add_post("/api/chat", h_chat)
     r.add_post("/api/buzz", h_buzz)
+    r.add_post("/api/avatarpack", h_avatarpack)
+    r.add_post("/api/avatarpackdel", h_avatarpackdel)
 
     r.add_post("/api/join", h_join)
     r.add_get("/api/play", h_play)
     r.add_post("/api/answer", h_answer)
     r.add_post("/api/playerbuzz", h_buzz_joueur)
+    r.add_post("/api/setavatar", h_setavatar)
     r.add_get("/api/media", h_media)
+    r.add_get("/api/avatarimg", h_avatarimg)
     return app
 
 

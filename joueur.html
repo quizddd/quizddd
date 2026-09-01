@@ -171,6 +171,59 @@ input::placeholder{color:var(--text-3)}
 .rang .nm{flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .rang .pt{font-family:var(--f-display); font-size:1.25rem; font-weight:700}
 
+/* Un visage vaut mieux qu'une ligne de plus : on reconnaît son voisin de
+   canapé au classement sans lire son pseudo. */
+.av{
+  display:inline-flex; flex:none; border-radius:50%; overflow:hidden;
+  line-height:0; background:var(--surface-2);
+}
+.av img,.av svg{width:100%; height:100%; display:block; object-fit:cover}
+.etat .av{vertical-align:middle; margin-right:8px}
+.avbtn{
+  padding:0; flex:none; line-height:0; cursor:pointer; border-radius:50%;
+  background:none; border:1px solid var(--line);
+}
+.avbtn:active{transform:scale(.94)}
+
+.avgrille{
+  position:relative; display:grid; gap:8px; width:100%; padding:6px;
+  grid-template-columns:repeat(auto-fill,minmax(58px,1fr));
+  max-height:34vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  background:var(--surface-2); border:1px solid var(--line-soft); border-radius:var(--r-m);
+}
+/* Cible large : on choisit sa figure au pouce, souvent d'une seule main. */
+.avcase{
+  display:grid; place-items:center; padding:4px; line-height:0; cursor:pointer;
+  border-radius:50%; border:2px solid transparent; background:none;
+}
+.avcase.on{border-color:var(--gold); background:var(--gold-dim)}
+.avsection{
+  grid-column:1/-1; padding:8px 4px 2px; font-family:var(--f-display); font-size:.72rem;
+  font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3);
+}
+
+.avpanneau{
+  position:fixed; inset:0; z-index:40; padding:16px; background:rgba(6,8,20,.72);
+  display:flex; align-items:center; justify-content:center;
+}
+.avboite{
+  width:100%; max-width:420px; display:flex; flex-direction:column; gap:12px;
+  padding:16px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-xl);
+}
+.avboite .avgrille{max-height:52vh}
+.avboite .tete{display:flex; align-items:center; gap:10px}
+.avboite .tete .t{
+  flex:1; font-family:var(--f-display); font-size:1rem; font-weight:700;
+  letter-spacing:.06em; text-transform:uppercase;
+}
+.avboite .tete .btn{padding:8px 14px; font-size:.9rem}
+/* Sur un téléphone le panneau vient du bas : le pouce y arrive sans lâcher
+   l'appareil. */
+@media (max-width: 640px){
+  .avpanneau{align-items:flex-end; padding:0}
+  .avboite{max-width:none; padding:14px 14px 22px; border-radius:var(--r-xl) var(--r-xl) 0 0}
+}
+
 /* Une fois la réponse donnée, la moitié du plaisir est de voir ce que les
    autres avaient écrit. Rien n'apparaît avant la révélation. */
 .toutes{width:100%; display:flex; flex-direction:column; gap:5px; margin-top:4px}
@@ -267,6 +320,16 @@ input::placeholder{color:var(--text-3)}
   </div>
 </div>
 
+<div class="avpanneau" id="avPanneau" hidden>
+  <div class="avboite" role="dialog" aria-modal="true" aria-labelledby="avTitre">
+    <div class="tete">
+      <span class="t" id="avTitre">Ta figure</span>
+      <button class="btn" id="avFermer" type="button">Fermer</button>
+    </div>
+    <div class="avgrille" id="avChoix" aria-label="Choix de la figure"></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
@@ -278,9 +341,11 @@ const CLE = "regie-quiz:joueur";
    joueur qui baisse le son le baissait aussi chez l'animateur. */
 const CLE_VOL = "regie-quiz:volume-joueur";
 
-let ME = { code:"", playerId:"", name:"" };
+let ME = { code:"", playerId:"", name:"", avatar:"" };
 let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
-let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "";
+let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "", BANDEAU_VU = "";
+let AV_ENVOI = null;
+const VERSION = "01/09/2026 à 16:51";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
@@ -290,11 +355,130 @@ try{ const v = parseFloat(localStorage.getItem(CLE_VOL)); if(v >= 0 && v <= 1) V
 const params = new URLSearchParams(location.search);
 if(params.get("c")) ME.code = params.get("c").toUpperCase();
 
+/* ------------------------------------------------ avatars */
+/* Avatars dessinés par le code : rien à télécharger, et ils existent déjà quand
+   la partie commence. Un même numéro donne toujours la même figure. */
+const AV_N = 36;
+const AV_FOND = ["#e2503f","#ef8b34","#f5c542","#8cbf3f","#33b083","#2fb3c9",
+                 "#4a79e0","#7d5fe0","#c04fc4","#e35287","#9b6b4f","#6b7f95"];
+const AV_PEAU = ["#f6d3b4","#e9b489","#cd8f61","#a46a3f","#79482a","#f1c0a0"];
+function avatarSVG(id){
+  const n = Math.abs(parseInt(String(id).replace(/^g:/, ""), 10) || 0) % AV_N;
+  const fond = AV_FOND[n % AV_FOND.length];
+  const peau = AV_PEAU[(n * 5 + 1) % AV_PEAU.length];
+  const cheveux = ["#2b2118","#6b3f22","#c8a33c","#8d8d8d","#3f2d5c","#1b1b1b"][(n * 7 + 2) % 6];
+  const yeux = n % 6, bouche = ((n / 6) | 0) % 6, tete = ((n / 3) | 0) % 6;
+  const chevelure = [
+    '<path d="M18 30q14-13 28 0q-6-6-14-6t-14 6z" fill="' + cheveux + '"/>',
+    '<path d="M15 32q0-18 17-18t17 18q-4-9-17-9t-17 9z" fill="' + cheveux + '"/>',
+    '<path d="M16 30l3-9 4 6 3-10 4 8 3-9 4 9 4-6 3 11z" fill="' + cheveux + '"/>',
+    '<path d="M14 33q0-19 18-19t18 19q-3-6-18-6t-18 6z" fill="' + cheveux + '"/>',
+    '<g fill="' + cheveux + '"><circle cx="20" cy="26" r="7"/><circle cx="32" cy="21" r="8"/>' +
+      '<circle cx="44" cy="26" r="7"/></g>',
+    '<path d="M14 30q0-18 18-18t18 18z" fill="' + cheveux + '"/>' +
+      '<rect x="12" y="26" width="40" height="6" rx="3" fill="#fff" opacity=".85"/>',
+  ][tete];
+  const regard = [
+    '<circle cx="25" cy="38" r="3"/><circle cx="39" cy="38" r="3"/>',
+    '<circle cx="25" cy="38" r="4.5" fill="#fff"/><circle cx="39" cy="38" r="4.5" fill="#fff"/>' +
+      '<circle cx="25" cy="38" r="2.2"/><circle cx="39" cy="38" r="2.2"/>',
+    '<path d="M21 38h8M35 38h8" stroke-width="2.6" stroke-linecap="round" fill="none"/>',
+    '<circle cx="25" cy="38" r="3"/><path d="M35 38h8" stroke-width="2.6" stroke-linecap="round" fill="none"/>',
+    '<g fill="none" stroke-width="2" stroke-linecap="round"><circle cx="25" cy="38" r="5.5"/>' +
+      '<circle cx="39" cy="38" r="5.5"/><path d="M30.5 38h3"/></g>' +
+      '<circle cx="25" cy="38" r="2"/><circle cx="39" cy="38" r="2"/>',
+    '<path d="M21 35q4-4 8 0M35 35q4-4 8 0" stroke-width="2.4" stroke-linecap="round" fill="none"/>' +
+      '<circle cx="25" cy="39" r="2.6"/><circle cx="39" cy="39" r="2.6"/>',
+  ][yeux];
+  const sourire = [
+    '<path d="M24 48q8 7 16 0" stroke-width="2.8" stroke-linecap="round" fill="none"/>',
+    '<path d="M22 46q10 12 20 0z" fill="#8e2b2b"/><path d="M25 46h14" stroke="#fff" stroke-width="2.4"/>',
+    '<ellipse cx="32" cy="49" rx="4.5" ry="5.5" fill="#8e2b2b"/>',
+    '<path d="M25 49h14" stroke-width="2.8" stroke-linecap="round" fill="none"/>',
+    '<path d="M22 46q10 11 20 0z" fill="#8e2b2b"/><path d="M28 52q4 6 8 0z" fill="#e8748a"/>',
+    '<path d="M24 44q8 7 16 0" stroke-width="2.8" stroke-linecap="round" fill="none"/>' +
+      '<path d="M22 42q5-4 10 0q5-4 10 0" stroke-width="3" stroke-linecap="round" fill="none"/>',
+  ][bouche];
+  return '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<rect width="64" height="64" fill="' + fond + '"/>' +
+    '<circle cx="32" cy="70" r="20" fill="' + peau + '"/>' +
+    '<ellipse cx="32" cy="40" rx="18" ry="19" fill="' + peau + '"/>' + chevelure +
+    '<g stroke="#2b2118" fill="#2b2118">' + regard + sourire + '</g></svg>';
+}
+
+/* Un identifiant qui commence par "c:" désigne une image envoyée par
+   l'animateur ; tout le reste se dessine sur place. */
+function avatarHTML(id, taille){
+  const v = String(id == null ? "" : id);
+  const dim = ' style="width:'+taille+'px;height:'+taille+'px"';
+  if(v.slice(0,2) === "c:"){
+    const u = "/api/avatarimg?room=" + encodeURIComponent(ME.code) +
+              "&id=" + encodeURIComponent(v.slice(2));
+    /* L'animateur peut retirer une image de son pack pendant la partie : plutôt
+       qu'une icône cassée, on laisse le rond nu. */
+    return '<span class="av"'+dim+'><img alt="" onerror="this.remove()" src="'+esc(u)+'"></span>';
+  }
+  return '<span class="av"'+dim+'>'+avatarSVG(v)+'</span>';
+}
+
+/* Le serveur dit qui porte quoi. Ce repli ne sert qu'aux quelques instants où
+   la liste n'est pas encore arrivée : mieux vaut douze figures au hasard que
+   douze fois la même. */
+function avatarDefaut(nom){
+  const s = String(nom == null ? "" : nom);
+  let n = 7;
+  for(let i = 0; i < s.length; i++) n = (n * 31 + s.charCodeAt(i)) % 100000;
+  return "g:" + (n % AV_N);
+}
+/* Le classement porte des noms d'équipes, pas seulement des pseudos : « Table 3 »
+   n'a pas de figure, et lui en inventer une afficherait un visage qui n'est
+   celui de personne. On ne rend donc que ce que le serveur connaît vraiment. */
+function avatarDe(nom){
+  const a = (ETAT && ETAT.avatars) ? ETAT.avatars[nom] : null;
+  return (typeof a === "string" && a) ? a : null;
+}
+
+/* Les 36 figures d'abord, le pack de l'animateur ensuite : à l'entrée le pack
+   est inconnu, on ne le propose donc qu'une fois dans la partie. */
+function grilleAvatars(courant, avecPack){
+  let h = "";
+  for(let i = 0; i < AV_N; i++){
+    const id = "g:" + i;
+    h += '<button type="button" class="avcase'+(id === courant ? " on" : "")+'" '+
+         'data-av="'+id+'" aria-label="Figure '+(i+1)+'">'+avatarHTML(id, 46)+'</button>';
+  }
+  const pack = (avecPack && ETAT && ETAT.pack) || [];
+  if(pack.length){
+    h += '<div class="avsection">Images de l’animateur</div>'+
+      pack.map(p=>{
+        const id = "c:" + p.id, nom = p.name || "Image";
+        return '<button type="button" class="avcase'+(id === courant ? " on" : "")+'" '+
+          'data-av="'+esc(id)+'" title="'+esc(nom)+'" aria-label="'+esc(nom)+'">'+
+          avatarHTML(id, 46)+'</button>';
+      }).join("");
+  }
+  return h;
+}
+
+function brancherGrille(racine, choisi){
+  racine.querySelectorAll(".avcase[data-av]").forEach(b => b.onclick = ()=>{
+    racine.querySelectorAll(".avcase.on").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    choisi(b.dataset.av);
+  });
+  const sel = racine.querySelector(".avcase.on");
+  if(sel) racine.scrollTop = Math.max(0, sel.offsetTop - 8);
+}
+
 /* ------------------------------------------------ écran d'entrée */
 function vueEntree(erreur){
   couperMedia();
+  fermerAvatars();
   $("#chat").hidden = true;
   CHAT_VU = "";
+  /* Une figure est proposée d'office : personne n'entre sans visage, et les
+     identifiants du pack d'un salon précédent n'ont plus cours ici. */
+  if(!/^g:\d+$/.test(ME.avatar || "")) ME.avatar = "g:" + Math.floor(Math.random()*AV_N);
   MAIN.innerHTML =
     '<div class="centre">'+
       '<div class="gros">Rejoindre la partie</div>'+
@@ -304,10 +488,15 @@ function vueEntree(erreur){
       '<div class="field"><label for="nom">Ton pseudo</label>'+
         '<input type="text" id="nom" maxlength="24" autocomplete="nickname" '+
         'value="'+esc(ME.name)+'" placeholder="Comme tu veux"></div>'+
+      '<div class="field"><label>Ta figure</label>'+
+        '<div class="avgrille" id="avEntree" role="group" aria-label="Choix de la figure">'+
+          grilleAvatars(ME.avatar, false)+'</div>'+
+        '<p class="note">Les images de l’animateur se choisissent une fois entré.</p></div>'+
       '<button class="btn btn-gold btn-lg" id="go">Entrer</button>'+
       '<p class="err" id="err">'+esc(erreur||"")+'</p>'+
       '<p class="note">Aucune inscription. Ton pseudo suffit, et il reste sur cet appareil.</p>'+
     '</div>';
+  brancherGrille($("#avEntree"), id => { ME.avatar = id; });
   const go = ()=> rejoindre($("#code").value, $("#nom").value);
   $("#go").onclick = go;
   $("#nom").onkeydown = e => { if(e.key==="Enter") go(); };
@@ -321,14 +510,15 @@ async function rejoindre(code, nom){
   if(!code) return vueEntree("Il faut le code de la partie.");
   if(!nom) return vueEntree("Choisis un pseudo.");
   $("#go").disabled = true;
+  const av = /^g:\d+$/.test(ME.avatar || "") ? ME.avatar : "";
   try{
     const r = await fetch("/api/join?room="+encodeURIComponent(code), {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({name:nom, playerId:ME.playerId})
+      body: JSON.stringify({name:nom, playerId:ME.playerId, avatar:av || undefined})
     });
     const d = await r.json();
     if(!r.ok || !d.ok) return vueEntree(d.error || "Impossible de rejoindre.");
-    ME = {code:d.code, playerId:d.playerId, name:d.name};
+    ME = {code:d.code, playerId:d.playerId, name:d.name, avatar:d.avatar || av};
     garder();
     V = -1;
     boucle();
@@ -347,6 +537,13 @@ async function boucle(){
       if(!d.me){ ME.playerId=""; garder(); return vueEntree("Tu as été retiré de la partie."); }
       DERIVE = d.now*1000 - Date.now();
       ETAT = d;
+      /* C'est le serveur qui fait foi : il a pu nous attribuer une figure, ou
+         retirer du pack celle qu'on portait. Tant que notre propre changement
+         n'a pas fait l'aller-retour, on ne se laisse pas remettre l'ancienne. */
+      if(typeof d.monAvatar === "string" && d.monAvatar){
+        if(AV_ENVOI){ if(d.monAvatar === AV_ENVOI) AV_ENVOI = null; }
+        else if(d.monAvatar !== ME.avatar){ ME.avatar = d.monAvatar; garder(); }
+      }
       dessiner();
     }catch(e){
       majBandeau(true);
@@ -355,11 +552,21 @@ async function boucle(){
   }
 }
 
+/* Le bandeau se repeint à chaque tour de boucle : sans ce garde-fou, le
+   bouton de la figure serait remplacé sous le doigt du joueur. */
 function majBandeau(coupe){
-  $("#who").innerHTML = ME.name
-    ? '<span class="pastille">'+esc(ME.code)+'</span><b>'+esc(ME.name)+'</b>'+
+  const h = ME.name
+    ? (ME.playerId ? '<button class="avbtn" id="avBtn" type="button" '+
+        'title="Changer de figure" aria-label="Changer de figure">'+
+        avatarHTML(ME.avatar, 30)+'</button>' : '')+
+      '<span class="pastille">'+esc(ME.code)+'</span><b>'+esc(ME.name)+'</b>'+
       (coupe ? '<span class="pastille pulse">reconnexion…</span>' : '')
     : "";
+  if(h === BANDEAU_VU) return;
+  BANDEAU_VU = h;
+  $("#who").innerHTML = h;
+  const b = $("#avBtn");
+  if(b) b.onclick = ouvrirAvatars;
 }
 
 /* ------------------------------------------------ media : arret franc */
@@ -401,6 +608,7 @@ function dessiner(){
                               (d.toutes||[]).length]);
   if(cle !== VU){ VU = cle; construire(); }
   majChrono();
+  majAvatars();
   appliqueFlou();
   suivreMedia();
   suivreBuzz();
@@ -452,7 +660,8 @@ function construire(){
     h += '<p class="note">L\'animateur attribue les points.</p>';
   } else if(q.buzzMode && !d.mine){
     if(d.buzzWinner && d.buzzWinner !== d.me){
-      h += '<p class="etat no"><b>'+esc(d.buzzWinner)+'</b> a buzzé et prend la main.</p>';
+      h += '<p class="etat no">'+avatarHTML(avatarDe(d.buzzWinner), 28)+
+           '<b>'+esc(d.buzzWinner)+'</b> a buzzé et prend la main.</p>';
     } else if(d.canBuzz){
       h += '<button class="btn btn-rose btn-lg" id="buzz" style="font-size:1.4rem;padding:26px">🔔 BUZZ</button>';
     } else if(d.buzzWinner === d.me){
@@ -470,10 +679,26 @@ function construire(){
   }
 
   h += classement(false);
+  /* Depuis que les figures entrent dans la clé de rendu, un voisin qui change
+     la sienne redessine l'écran : une réponse en cours de frappe ne doit pas
+     partir avec. */
+  const vieux = $("#rep");
+  const brouillon = (vieux && q && vieux.dataset.q === String(q.id))
+    ? {t:vieux.value, f:document.activeElement === vieux, p:vieux.selectionStart} : null;
   MAIN.innerHTML = h;
   if(garde){
     const neuf = $("#media");
     if(neuf) neuf.replaceWith(garde);   /* on remet le lecteur qui jouait */
+  }
+  if(brouillon){
+    const champ = $("#rep");
+    if(champ){
+      champ.value = brouillon.t;
+      if(brouillon.f){
+        champ.focus();
+        try{ champ.setSelectionRange(brouillon.p, brouillon.p); }catch(e){}
+      }
+    }
   }
 
   if($("#buzz")) $("#buzz").onclick = buzzer;
@@ -496,6 +721,7 @@ function zoneReponse(){
   }
   return '<div class="field"><label for="rep">Ta réponse</label>'+
          '<input type="text" id="rep" maxlength="300" autocomplete="off" '+
+         'data-q="'+esc(String(q.id))+'" '+
          'value="'+esc(d.mine||"")+'" placeholder="Écris ici"></div>'+
          '<button class="btn btn-gold btn-lg" id="env">'+(d.mine?"Corriger":"Envoyer")+'</button>'+
          (d.mine ? '<p class="etat ok">Réponse enregistrée : '+esc(d.mine)+'</p>' : '');
@@ -565,12 +791,29 @@ function toutesLesReponses(){
     '</div>').join("")+'</div>';
 }
 
+/* Un joueur qui change de figure ne doit pas reconstruire l'écran de tous les
+   autres : ça couperait l'extrait en cours et effacerait une réponse en train
+   d'être tapée. On remplace donc les visages là où ils sont. */
+function majAvatars(){
+  const d = ETAT;
+  if(!d) return;
+  document.querySelectorAll("[data-av-nom]").forEach(el=>{
+    const voulu = avatarDe(el.dataset.avNom);
+    if(!voulu){ if(el.dataset.avId){ el.dataset.avId = ""; el.innerHTML = ""; } return; }
+    if(el.dataset.avId === voulu) return;
+    el.dataset.avId = voulu;
+    el.innerHTML = avatarHTML(voulu, Number(el.dataset.avT) || 30);
+  });
+}
+
 function classement(seul){
   const d = ETAT;
   if(!d.scores || !d.scores.length) return "";
   const tri = d.scores.slice().sort((a,b)=> b.score-a.score);
   return '<div class="rang">'+ tri.slice(0,12).map((s,i)=>
     '<div class="l'+(s.name===d.me?" moi":"")+'"><span class="n">'+(i+1)+'</span>'+
+    '<span data-av-nom="'+esc(s.name)+'" data-av-t="30" data-av-id="'+esc(avatarDe(s.name)||"")+'">'+
+      (avatarDe(s.name) ? avatarHTML(avatarDe(s.name), 30) : "")+'</span>'+
     '<span class="nm">'+esc(s.name)+'</span><span class="pt">'+s.score+'</span></div>').join("")+'</div>';
 }
 
@@ -856,6 +1099,57 @@ function suivreBuzz(){
   if(BUZZ_VU !== null && n > BUZZ_VU) sonBuzz();
   BUZZ_VU = n;
 }
+
+/* ------------------------------------------------ changer de figure */
+function ouvrirAvatars(){
+  if(!ME.playerId) return;
+  const g = $("#avChoix");
+  g.innerHTML = grilleAvatars(ME.avatar, true);
+  $("#avPanneau").hidden = false;
+  brancherGrille(g, choisirAvatar);
+  $("#avFermer").focus();
+}
+
+function fermerAvatars(){
+  const p = $("#avPanneau");
+  if(p) p.hidden = true;
+}
+
+async function choisirAvatar(id){
+  if(!ME.playerId || id === ME.avatar) return fermerAvatars();
+  const avant = ME.avatar;
+  ME.avatar = id;
+  AV_ENVOI = id;
+  garder();
+  fermerAvatars();
+  /* Retour immédiat : le tour de boucle qui confirme peut mettre du temps. */
+  BANDEAU_VU = ""; majBandeau(false);
+  if(ETAT){
+    if(ETAT.avatars && ETAT.me) ETAT.avatars[ETAT.me] = id;
+    VU = ""; construire();
+  }
+  try{
+    const r = await fetch("/api/setavatar?room="+encodeURIComponent(ME.code), {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({playerId:ME.playerId, avatar:id})
+    });
+    if(!r.ok) throw 0;
+  }catch(e){
+    ME.avatar = avant;
+    AV_ENVOI = null;
+    garder();
+    BANDEAU_VU = ""; majBandeau(false);
+    if(ETAT){
+      if(ETAT.avatars && ETAT.me) ETAT.avatars[ETAT.me] = avant;
+      VU = ""; construire();
+    }
+  }
+}
+
+$("#avFermer").onclick = fermerAvatars;
+/* Le fond, la touche Échap : deux façons de renoncer sans rien changer. */
+$("#avPanneau").onclick = e => { if(e.target === $("#avPanneau")) fermerAvatars(); };
+document.addEventListener("keydown", e => { if(e.key === "Escape") fermerAvatars(); });
 
 /* ------------------------------------------------ chat */
 function majChat(){

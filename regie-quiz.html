@@ -293,6 +293,9 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
   padding:12px; position:sticky; top:76px; max-height:calc(100vh - 100px); overflow:auto;
   display:flex; flex-direction:column; gap:10px;
 }
+/* Sans ça, les manches sont comprimées pour tenir dans la hauteur du rail :
+   les questions du bas sont rognées, et plus rien n'est cliquable au-delà. */
+.rail > .round, .rail > .rail-foot{flex:none}
 @media (max-width:960px){.rail{position:static; max-height:none}}
 .round{border:1px solid var(--line-soft); border-radius:var(--r-m); background:var(--surface-2); overflow:hidden}
 .round-hd{display:flex; align-items:center; gap:6px; padding:8px 8px 8px 12px; background:var(--surface-3)}
@@ -607,6 +610,55 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
   background:var(--rose); color:#FFF6F8; display:grid; place-items:center;
   font-family:var(--f-display); font-weight:700; font-size:.85rem; box-shadow:var(--shadow-1);
 }
+
+/* ============================================================
+   AVATARS
+   ============================================================ */
+/* Une seule pastille pour deux contenus très différents : une photo envoyée
+   par l'animateur et un dessin vectoriel. Le rond découpe, personne ne dépasse. */
+.av{
+  width:var(--t,40px); height:var(--t,40px); border-radius:50%; overflow:hidden;
+  background:var(--surface-3); display:block; line-height:0;
+}
+.av img,.av svg{width:100%; height:100%; display:block; object-fit:cover}
+
+/* L'en-tête de carte s'aligne sur la ligne de base du nom ; l'avatar n'a pas
+   de texte, il se recentre et ne cède pas un pixel à un pseudo trop long. */
+.tcard-av{--t:28px; flex:none; align-self:center}
+
+/* Pack d'images de l'animateur */
+.av-grille{
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); gap:10px;
+  max-height:302px; overflow:auto; padding:2px; scrollbar-width:thin;
+}
+.av-case{
+  position:relative; aspect-ratio:1; border-radius:var(--r-m); overflow:hidden;
+  background:var(--surface-2); border:1px solid var(--line-soft);
+  transition:border-color .14s, box-shadow .14s;
+}
+.av-case:is(button){padding:0; cursor:pointer}
+.av-case img,.av-case svg,.av-case .av{width:100%; height:100%; display:block; object-fit:cover}
+.av-case:hover{border-color:var(--line)}
+.av-case.sel{border-color:var(--gold); box-shadow:var(--ring)}
+.av-retirer{
+  position:absolute; top:5px; right:5px; width:22px; height:22px; flex:none;
+  border:0; border-radius:50%; cursor:pointer; background:var(--rose); color:#FFF6F8;
+  display:grid; place-items:center; font-size:.78rem; line-height:1;
+  box-shadow:var(--shadow-1); opacity:0; transition:opacity .14s, transform .12s;
+}
+.av-case:hover .av-retirer,.av-case:focus-within .av-retirer{opacity:1}
+.av-retirer:active{transform:scale(.9)}
+@media (hover:none){.av-retirer{opacity:1}}
+
+.av-progres{
+  display:flex; align-items:center; gap:10px; font-family:var(--f-mono);
+  font-size:.78rem; color:var(--text-3); font-variant-numeric:tabular-nums;
+}
+.av-progres i{
+  flex:1; height:6px; border-radius:3px; background:var(--surface-3);
+  overflow:hidden; display:block;
+}
+.av-progres i b{display:block; height:100%; width:0; background:var(--gold); transition:width .2s linear}
 
 /* ============================================================
    DISCUSSION — le panneau latéral de la console
@@ -931,6 +983,9 @@ const shortLabel = qq => (qq.text||"").trim().replace(/\s+/g," ").slice(0,60);
    4. ÉTAT + COQUE
    ============================================================ */
 const S = { view:"library", list:[], quiz:null, selQ:null, play:null };
+/* Remplace a la construction. Sert a verifier d'un coup d'oeil qu'un onglet
+   ouvert de longue date n'est pas reste sur une ancienne version. */
+const VERSION = "01/09/2026 à 16:51";
 const MAIN = $("#main"), MARQ = $("#marquee");
 
 const VIEWS = [
@@ -1039,8 +1094,25 @@ function viewLibrary(){
     '</div>';
   }).join("");
 
+  const rep = (typeof litReprise === "function") ? litReprise() : null;
+
   MAIN.innerHTML =
   '<div class="wrap">'+
+    (rep
+      ? '<div class="panel reprise" style="margin-bottom:18px;border-color:var(--gold)">'+
+          '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
+            '<div style="flex:1;min-width:200px">'+
+              '<div class="eyebrow" style="color:var(--gold)">Partie interrompue</div>'+
+              '<strong>'+esc(rep.titre||"Quiz")+'</strong>'+
+              '<span class="hint"> — tu en étais à la question '+((rep.i||0)+1)+'.</span>'+
+            '</div>'+
+            '<div class="btn-row">'+
+              '<button class="btn btn-gold" id="btnReprise">Reprendre</button>'+
+              '<button class="btn btn-ghost" id="btnOublie">Ignorer</button>'+
+            '</div>'+
+          '</div>'+
+        '</div>'
+      : "")+
     '<div class="page-hd">'+
       '<div><div class="eyebrow">Régie</div><h1>Bibliothèque</h1>'+
       '<p class="sub">Chaque quiz garde ses questions, ses médias, ses équipes et tout l\'historique des points.</p></div>'+
@@ -1069,6 +1141,8 @@ function viewLibrary(){
   if($("#btnDemo")) $("#btnDemo").onclick = loadDemo;
   if($("#btnDemo2"))$("#btnDemo2").onclick= loadDemo;
   $("#btnImport") && ($("#btnImport").onclick = importDialog);
+  if($("#btnReprise")) $("#btnReprise").onclick = reprendrePartie;
+  if($("#btnOublie"))  $("#btnOublie").onclick  = ()=>{ oublieReprise(); render(); };
 
   $$(".quiz-card").forEach(c=>{
     c.onclick = e => { if(e.target.closest("[data-dup],[data-del]")) return; openQuiz(c.dataset.open); };
@@ -1794,9 +1868,22 @@ function viewPlay(){
   p.blurFiche = flouFiche;
   if(!p.running && !p.endAt) p.left = tim;
 
-  /* On remplace tout l'écran : un lecteur laissé derrière continuerait de
-     jouer sans que rien ne puisse plus l'atteindre. */
-  stopMedia();
+  /* On remplace tout l'écran. Un lecteur laissé derrière continuerait de jouer
+     sans que rien ne puisse plus l'atteindre — mais le couper à chaque redessin
+     relancerait l'extrait dès qu'on affiche l'énoncé ou qu'un joueur buzze, et
+     la question « regarde d'abord, réponds ensuite » deviendrait impossible.
+     On le met donc de côté tant qu'il s'agit du même extrait. */
+  const sceneAvant = signatureScene();
+  const hoteAvant = $("#mstage");
+  if(hoteAvant && sceneAvant && sceneAvant === SCENE_SIG
+     && hoteAvant.querySelector("audio, video")){
+    MEDIA_GARDE = hoteAvant;
+    hoteAvant.remove();
+  } else {
+    MEDIA_GARDE = null;
+    stopMedia();
+  }
+  SCENE_SIG = sceneAvant;
   MAIN.innerHTML =
   '<div class="play">'+
     '<div class="stage-wrap">'+
@@ -1860,6 +1947,7 @@ function viewPlay(){
   renderRail2();
   renderBuzzBanner();
   renderChat();
+  noteReprise();
   syncTimer();
 
   $("#tPrev").onclick = ()=> gotoQ(p.i-1);
@@ -1896,6 +1984,70 @@ function viewPlay(){
   if(typeof partieSync === "function") partieSync();
 }
 
+/* Avatars dessinés par le code : rien à télécharger, et ils existent déjà quand
+   la partie commence. Un même numéro donne toujours la même figure. */
+const AV_N = 36;
+const AV_FOND = ["#e2503f","#ef8b34","#f5c542","#8cbf3f","#33b083","#2fb3c9",
+                 "#4a79e0","#7d5fe0","#c04fc4","#e35287","#9b6b4f","#6b7f95"];
+const AV_PEAU = ["#f6d3b4","#e9b489","#cd8f61","#a46a3f","#79482a","#f1c0a0"];
+function avatarSVG(id){
+  const n = Math.abs(parseInt(String(id).replace(/^g:/, ""), 10) || 0) % AV_N;
+  const fond = AV_FOND[n % AV_FOND.length];
+  const peau = AV_PEAU[(n * 5 + 1) % AV_PEAU.length];
+  const cheveux = ["#2b2118","#6b3f22","#c8a33c","#8d8d8d","#3f2d5c","#1b1b1b"][(n * 7 + 2) % 6];
+  const yeux = n % 6, bouche = ((n / 6) | 0) % 6, tete = ((n / 3) | 0) % 6;
+  const chevelure = [
+    '<path d="M18 30q14-13 28 0q-6-6-14-6t-14 6z" fill="' + cheveux + '"/>',
+    '<path d="M15 32q0-18 17-18t17 18q-4-9-17-9t-17 9z" fill="' + cheveux + '"/>',
+    '<path d="M16 30l3-9 4 6 3-10 4 8 3-9 4 9 4-6 3 11z" fill="' + cheveux + '"/>',
+    '<path d="M14 33q0-19 18-19t18 19q-3-6-18-6t-18 6z" fill="' + cheveux + '"/>',
+    '<g fill="' + cheveux + '"><circle cx="20" cy="26" r="7"/><circle cx="32" cy="21" r="8"/>' +
+      '<circle cx="44" cy="26" r="7"/></g>',
+    '<path d="M14 30q0-18 18-18t18 18z" fill="' + cheveux + '"/>' +
+      '<rect x="12" y="26" width="40" height="6" rx="3" fill="#fff" opacity=".85"/>',
+  ][tete];
+  const regard = [
+    '<circle cx="25" cy="38" r="3"/><circle cx="39" cy="38" r="3"/>',
+    '<circle cx="25" cy="38" r="4.5" fill="#fff"/><circle cx="39" cy="38" r="4.5" fill="#fff"/>' +
+      '<circle cx="25" cy="38" r="2.2"/><circle cx="39" cy="38" r="2.2"/>',
+    '<path d="M21 38h8M35 38h8" stroke-width="2.6" stroke-linecap="round" fill="none"/>',
+    '<circle cx="25" cy="38" r="3"/><path d="M35 38h8" stroke-width="2.6" stroke-linecap="round" fill="none"/>',
+    '<g fill="none" stroke-width="2" stroke-linecap="round"><circle cx="25" cy="38" r="5.5"/>' +
+      '<circle cx="39" cy="38" r="5.5"/><path d="M30.5 38h3"/></g>' +
+      '<circle cx="25" cy="38" r="2"/><circle cx="39" cy="38" r="2"/>',
+    '<path d="M21 35q4-4 8 0M35 35q4-4 8 0" stroke-width="2.4" stroke-linecap="round" fill="none"/>' +
+      '<circle cx="25" cy="39" r="2.6"/><circle cx="39" cy="39" r="2.6"/>',
+  ][yeux];
+  const sourire = [
+    '<path d="M24 48q8 7 16 0" stroke-width="2.8" stroke-linecap="round" fill="none"/>',
+    '<path d="M22 46q10 12 20 0z" fill="#8e2b2b"/><path d="M25 46h14" stroke="#fff" stroke-width="2.4"/>',
+    '<ellipse cx="32" cy="49" rx="4.5" ry="5.5" fill="#8e2b2b"/>',
+    '<path d="M25 49h14" stroke-width="2.8" stroke-linecap="round" fill="none"/>',
+    '<path d="M22 46q10 11 20 0z" fill="#8e2b2b"/><path d="M28 52q4 6 8 0z" fill="#e8748a"/>',
+    '<path d="M24 44q8 7 16 0" stroke-width="2.8" stroke-linecap="round" fill="none"/>' +
+      '<path d="M22 42q5-4 10 0q5-4 10 0" stroke-width="3" stroke-linecap="round" fill="none"/>',
+  ][bouche];
+  return '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<rect width="64" height="64" fill="' + fond + '"/>' +
+    '<circle cx="32" cy="70" r="20" fill="' + peau + '"/>' +
+    '<ellipse cx="32" cy="40" rx="18" ry="19" fill="' + peau + '"/>' + chevelure +
+    '<g stroke="#2b2118" fill="#2b2118">' + regard + sourire + '</g></svg>';
+}
+/* Une image du pack reste chez le serveur : la console l'affiche par son URL
+   plutôt que de la recopier dans la page. */
+function avatarHTML(id, taille){
+  const t = Math.round(Number(taille) || 32);
+  const dim = ' style="width:'+t+'px;height:'+t+'px"';
+  const s = String(id == null ? "" : id);
+  if(s.indexOf("c:") === 0){
+    const salon = (typeof PARTIE !== "undefined" && PARTIE.code) ? PARTIE.code : "";
+    const url = "/api/avatarimg?room=" + encodeURIComponent(salon) +
+                "&id=" + encodeURIComponent(s.slice(2));
+    return '<span class="av"'+dim+'><img src="'+esc(url)+'" alt=""></span>';
+  }
+  return '<span class="av"'+dim+'>'+avatarSVG(s)+'</span>';
+}
+
 /* Qui a la main, affiché en grand pour la salle. */
 function renderBuzzBanner(){
   const b = $("#buzzBanner");
@@ -1903,7 +2055,12 @@ function renderBuzzBanner(){
   const gagnant = (typeof PARTIE !== "undefined" && PARTIE.buzzMode) ? PARTIE.buzzGagnant : null;
   b.hidden = !gagnant;
   if(gagnant){
+    /* Le buzz ne transporte que le nom : l'avatar se retrouve dans la liste des
+       joueurs du salon. */
+    const j = (typeof PARTIE !== "undefined" && PARTIE.joueurs)
+      ? PARTIE.joueurs.find(x => x.userId === gagnant.userId) : null;
     b.innerHTML = '<span class="bz" aria-hidden="true">\uD83D\uDD14</span>'+
+      (j && j.avatar ? avatarHTML(j.avatar, 40) : "")+
       '<span><strong>'+esc(gagnant.name)+'</strong> a buzzé et prend la main</span>';
   }
 }
@@ -1964,6 +2121,52 @@ function brancheChat(){
   champ.onkeydown = e => { if(e.key === "Enter"){ e.preventDefault(); envoie(); } };
 }
 
+/* Un rechargement accidentel en pleine soirée ne doit pas coûter la partie :
+   on retient discrètement où on en était. Le salon et les points, eux, sont
+   déjà conservés ailleurs. */
+const REPRISE_CLE = "regie-quiz:reprise";
+function noteReprise(){
+  if(!S.quiz || !S.play) return;
+  try{
+    localStorage.setItem(REPRISE_CLE, JSON.stringify({
+      quizId: S.quiz.id, i: S.play.i, titre: S.quiz.title, ts: Date.now() }));
+  }catch(e){}
+}
+function oublieReprise(){
+  try{ localStorage.removeItem(REPRISE_CLE); }catch(e){}
+}
+/* Proposée seulement si la partie est encore fraîche : au-delà, c'est du
+   souvenir, pas une reprise. */
+function litReprise(){
+  try{
+    const r = JSON.parse(localStorage.getItem(REPRISE_CLE) || "null");
+    if(!r || !r.quizId) return null;
+    if(Date.now() - (r.ts||0) > 6*3600*1000) return null;
+    if(!S.list.some(q => q.id === r.quizId)) return null;
+    return r;
+  }catch(e){ return null; }
+}
+async function reprendrePartie(){
+  const r = litReprise();
+  if(!r) return;
+  await openQuiz(r.quizId);
+  setView("play");
+  gotoQ(r.i || 0);
+  toast("Partie reprise à la question "+((r.i||0)+1)+".","good");
+}
+
+/* Ce qui identifie l'extrait affiché sur la scène. Tant que ça ne bouge pas, le
+   lecteur en place est le bon et il continue de jouer. */
+let MEDIA_GARDE = null, SCENE_SIG = "";
+function signatureScene(){
+  const it = (typeof curItem === "function") ? curItem() : null;
+  if(!it || !S.play) return "";
+  const m = it.q.media || {};
+  return JSON.stringify([it.q.id, S.play.phase, !!S.play.shown,
+                         m.kind || "", m.assetId || m.url || "",
+                         m.start || 0, m.stop || 0]);
+}
+
 /* Coupe proprement le média en cours avant de reconstruire la scène. */
 function stopMedia(){
   /* On débranche avant de couper : la pause déclenche un évènement, et il
@@ -2019,12 +2222,16 @@ async function renderStage(){
   }
   stage.innerHTML = h;
 
+  const garde = MEDIA_GARDE;
+  MEDIA_GARDE = null;
+  if(garde && $("#mstage")) $("#mstage").replaceWith(garde);
+
   if($("#showMedia")) $("#showMedia").onclick = ()=>{
     S.play.shown = true;
     if(typeof partieLanceMedia === "function") partieLanceMedia();
     renderStage();
   };
-  if($("#mstage") && !hideIt) await mountMedia($("#mstage"), q.media, true);
+  if($("#mstage") && !hideIt && !garde) await mountMedia($("#mstage"), q.media, true);
   if($("#rstage")) await mountMedia($("#rstage"), q.reveal, false);
 }
 
@@ -2275,7 +2482,11 @@ function renderRail2(){
     const j = enLigne ? PARTIE.joueurs.find(x=>x.teamId === t.id) : null;
     return '<div class="tcard'+(bz>=0?" buzzed":"")+'" style="--tc:'+esc(t.color)+'" data-t="'+t.id+'">'+
       (bz>=0 ? '<span class="buzz-badge">'+(bz+1)+'</span>' : "")+
-      '<div class="thd"><span class="tname">'+esc(t.name)+'</span>'+
+      '<div class="thd">'+
+      /* Une équipe saisie à la main n'a de visage à montrer que si quelqu'un
+         s'est connecté derrière. */
+      (j && j.avatar ? '<span class="tcard-av">'+avatarHTML(j.avatar, 30)+'</span>' : "")+
+      '<span class="tname">'+esc(t.name)+'</span>'+
       '<span class="tscore num" data-sc="'+t.id+'">'+teamScore(quiz,t.id)+'</span></div>'+
       (typeof reponseHTML==="function" ? reponseHTML(t.id) : "")+
       (typeof speedBonusFor==="function" && speedBonusFor(quiz, t.id, it.q.id)
@@ -2334,6 +2545,9 @@ function gotoQ(i){
   const list = flat(S.quiz);
   i = clamp(i, 0, list.length-1);
   stopTimer(true); stopMedia();
+  /* Aller sur une question, meme celle deja affichee, doit repartir de zero :
+     on invalide la scene pour que le lecteur soit remonte et non conserve. */
+  SCENE_SIG = "";
   const p = S.play;
   p.i = i; p.phase = "question"; p.buzzes = []; p.blur = null; p.shown = false; p.peek = false; p.endAt = 0;
   /* Réglé avant l'affichage : la question part aux joueurs à la fin de
@@ -2342,9 +2556,44 @@ function gotoQ(i){
   viewPlay();
   if(S.quiz.settings.autoStart && qTimer(curItem().q, S.quiz) > 0) startTimer();
 }
+/* Casse et espaces en trop ne devraient pas coûter un point : « lima », « Lima »
+   et «  Lima  » sont la même réponse. Le reste — orthographe approximative,
+   synonymes, formulations — n'est pas de mon ressort. */
+function normaliseReponse(t){
+  return String(t == null ? "" : t).trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/* À la révélation, les réponses rigoureusement identiques à celle attendue sont
+   validées d'office : c'est la partie fastidieuse et sans enjeu de la
+   correction. Aucune réponse n'est jamais refusée automatiquement, et un
+   verdict déjà posé à la main n'est jamais écrasé. */
+function valideLesExactes(it){
+  if(typeof partieActive !== "function" || !partieActive()) return 0;
+  const q = it.q;
+  if(q.type !== "free") return 0;
+  const attendue = normaliseReponse(q.answer);
+  if(!attendue) return 0;
+  const pts = qPoints(q, it.round, S.quiz);
+  let n = 0;
+  S.quiz.teams.forEach(t=>{
+    if(awardOf(S.quiz, t.id, q.id)) return;
+    const rep = (typeof reponseDe === "function") ? reponseDe(t.id) : null;
+    if(!rep || normaliseReponse(rep.value) !== attendue) return;
+    setAward(t.id, q.id, pts, "Q"+(S.play.i+1)+" — juste (auto)", "full", rep.order || 0);
+    n++;
+  });
+  if(n){
+    if(typeof applySpeedBonus === "function") applySpeedBonus(q.id);
+    toast(n+" réponse"+(n>1?"s":"")+" exacte"+(n>1?"s":"")+" validée"+(n>1?"s":"")+
+          " automatiquement. Les autres attendent ton verdict.","good",5000);
+  }
+  return n;
+}
+
 function reveal(){
   S.play.phase = "revealed";
   stopTimer(true);
+  valideLesExactes(curItem());
   viewPlay();
 }
 function togglePeek(){
@@ -2376,6 +2625,7 @@ async function arreterPartie(){
   if(typeof partieArret === "function") await partieArret();
   if(typeof PARTIE !== "undefined"){ PARTIE.derniereQ = null; PARTIE.derniereReveal = null; }
   S.play = null;
+  oublieReprise();
   setView("scores");
   toast("Partie arrêtée.","good");
 }
@@ -2499,6 +2749,26 @@ function toggleFullscreen(){
   }catch(e){ toast("Le plein écran est bloqué ici.","bad"); }
 }
 </script>
+<style>
+/* ============================================================
+   IMAGES D'AVATARS — vignettes du pack de l'animateur
+   ============================================================ */
+.av-pack{display:grid; grid-template-columns:repeat(auto-fill,minmax(94px,1fr)); gap:14px 12px}
+.av-item{position:relative; display:flex; flex-direction:column; align-items:center; gap:6px}
+.av-vig{
+  width:72px; height:72px; border-radius:50%; overflow:hidden; flex:none;
+  background:var(--surface-3); border:1px solid var(--line-soft);
+}
+.av-vig img{width:100%; height:100%; object-fit:cover; display:block}
+.av-nom{
+  font-size:.74rem; color:var(--text-3); text-align:center;
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.av-item .icon-btn{
+  position:absolute; top:-6px; right:2px; width:26px; height:26px; font-size:.78rem;
+  background:var(--surface-2); border-color:var(--line-soft);
+}
+</style>
 <script>
 "use strict";
 
@@ -2536,6 +2806,9 @@ function settingsDialog(){
              "Chaque joueur voit l'image et entend l'extrait sur son propre écran, au même instant que les autres. Décoche seulement si tu préfères diffuser toi-même, par un partage d'écran.")
         : "")+
     '</div>'+
+    '<hr class="rule">'+
+    '<div class="hint">Version du '+esc(VERSION)+'. '+
+      'Si tes joueurs et toi n\'avez pas la même, rechargez la page.</div>'+
   '</div><div class="foot"><button class="btn btn-gold" data-x="ok">Terminé</button></div>');
 
   const bind = (id,fn)=> m.root.querySelector("#"+id).onchange = e => { fn(e.target); touch(); };
@@ -2731,6 +3004,324 @@ function importDialog(){
     setView("editor");
     toast("« "+quiz.title+" » importé.","good");
   };
+}
+
+/* ============================================================
+   15 bis. IMAGES D'AVATARS — le pack de l'animateur
+   ============================================================ */
+const AVATARS_MAX  = 60;    /* même plafond que le serveur */
+const AVATAR_COTE  = 256;
+const AVATAR_SEUIL = 52;    /* distance RVB en deçà de laquelle deux pixels
+                               passent pour la même couleur */
+
+const avatarImgURL = id =>
+  "/api/avatarimg?room=" + encodeURIComponent(PARTIE.code) + "&id=" + encodeURIComponent(id);
+
+/* Le bouton vit à côté des Réglages, mais la barre de l'éditeur est réécrite
+   à chaque rendu : on repose le bouton après coup, plutôt que d'aller
+   modifier une vue qui ne nous appartient pas. */
+const editeurSansAvatars = viewEditor;
+viewEditor = function(){
+  editeurSansAvatars();
+  const reglages = $("#btnSettings");
+  if(!reglages || $("#btnAvatars")) return;
+  const b = document.createElement("button");
+  b.type = "button"; b.id = "btnAvatars"; b.className = "btn btn-ghost";
+  b.textContent = "Avatars";
+  b.onclick = avatarsDialog;
+  reglages.insertAdjacentElement("afterend", b);
+};
+
+/* Le pack vit sur le serveur, qui le sert aux joueurs : on le redemande à
+   chaque fois plutôt que d'entretenir une copie qui vieillit. */
+async function avatarPackLit(){
+  try{
+    const r = await fetch(avecSalon("/api/state"), {cache:"no-store", headers:enTetes()});
+    if(r.status === 401){ demandeCle(); return null; }
+    if(!r.ok) return null;
+    const d = await r.json();
+    const p = d.pack || d.avatarPack || (Array.isArray(PARTIE.pack) ? PARTIE.pack : null);
+    return Array.isArray(p) ? p : [];
+  }catch(e){ return null; }
+}
+
+function avatarCharge(fichier){
+  return new Promise((ok, non)=>{
+    const url = URL.createObjectURL(fichier);
+    const img = new Image();
+    img.onload  = ()=>{ URL.revokeObjectURL(url); ok(img); };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); non(new Error("format illisible")); };
+    img.src = url;
+  });
+}
+
+/* Rend transparent le fond uni. On part des quatre bords et on avance de
+   proche en proche : ce qui touche le bord sans changer de couleur est du
+   fond, le reste est le sujet. File d'attente et non récursion — 65 536
+   pixels feraient déborder la pile d'appels.
+   Renvoie false quand le fond n'était pas uni : l'image reste intacte. */
+function avatarDetoure(ctx, cote, ref){
+  const im = ctx.getImageData(0, 0, cote, cote);
+  const px = im.data, total = cote * cote;
+
+  const bord = [];
+  for(let x = 0; x < cote; x++){ bord.push(x); bord.push((cote-1)*cote + x); }
+  for(let y = 1; y < cote-1; y++){ bord.push(y*cote); bord.push(y*cote + cote-1); }
+
+  const fr = ref.r, fg = ref.g, fb = ref.b;
+  const seuil2 = AVATAR_SEUIL * AVATAR_SEUIL;
+  const proche = i2 => {
+    const o = i2*4, dr = px[o]-fr, dg = px[o+1]-fg, db = px[o+2]-fb;
+    return dr*dr + dg*dg + db*db <= seuil2;
+  };
+
+  const fond = new Uint8Array(total);
+  const attente = new Int32Array(total);
+  let lu = 0, ecrit = 0;
+  const pousse = i2 => {
+    if(fond[i2] || !proche(i2)) return;
+    fond[i2] = 1; attente[ecrit++] = i2;
+  };
+  bord.forEach(pousse);
+  while(lu < ecrit){
+    const i2 = attente[lu++], x = i2 % cote, y = (i2 / cote) | 0;
+    if(x > 0)      pousse(i2-1);
+    if(x < cote-1) pousse(i2+1);
+    if(y > 0)      pousse(i2-cote);
+    if(y < cote-1) pousse(i2+cote);
+  }
+  if(ecrit > total * 0.97) return "vide";
+  if(ecrit < total * 0.02) return "rien";
+
+  for(let i2 = 0; i2 < total; i2++) if(fond[i2]) px[i2*4+3] = 0;
+
+  /* Un pixel effacé qui touche encore le sujet reprend une opacité partielle et
+     la couleur de ses voisins restés opaques. Sans ce liseré, la découpe fait
+     un escalier très visible à la taille d'un avatar, et le fond effacé laisse
+     un halo de sa propre couleur. */
+  for(let i2 = 0; i2 < total; i2++){
+    if(!fond[i2]) continue;
+    const x = i2 % cote, y = (i2 / cote) | 0;
+    let n = 0, r = 0, g = 0, b = 0;
+    const voisin = j2 => {
+      if(fond[j2]) return;
+      const o = j2*4; n++; r += px[o]; g += px[o+1]; b += px[o+2];
+    };
+    if(x > 0)      voisin(i2-1);
+    if(x < cote-1) voisin(i2+1);
+    if(y > 0)      voisin(i2-cote);
+    if(y < cote-1) voisin(i2+cote);
+    if(!n) continue;
+    const o = i2*4;
+    px[o] = r/n; px[o+1] = g/n; px[o+2] = b/n; px[o+3] = Math.min(210, 55*n);
+  }
+  ctx.putImageData(im, 0, 0);
+  return "fait";
+}
+
+
+/* Un avatar s'affiche dans un rond de quelques dizaines de pixels : inutile
+   de faire voyager un cliché de douze mégapixels. */
+/* Une image déjà détourée arrive avec des pixels transparents. La retoucher
+   n'aurait aucun sens : le fond « uni » serait alors le noir de la transparence,
+   et on découperait tout ce que le sujet a de sombre. */
+function avatarDejaDetouree(img, l, h){
+  try{
+    const t = Math.min(96, Math.max(l, h));
+    const c = document.createElement("canvas");
+    c.width = c.height = t;
+    const x = c.getContext("2d", {willReadFrequently:true});
+    x.drawImage(img, 0, 0, t, t);
+    const px = x.getImageData(0, 0, t, t).data;
+    let clairs = 0;
+    for(let i = 3; i < px.length; i += 4) if(px[i] < 250) clairs++;
+    return clairs > (t*t) * 0.02;
+  }catch(e){ return false; }
+}
+
+/* Diagnostic du fond, sur l'image d'origine — et surtout pas sur le cadre
+   qu'on fabrique ensuite : sa marge peinte serait uniforme par construction, et
+   le contrôle ne vérifierait plus rien. On rend la couleur du pourtour et la
+   proportion du pourtour qui s'y conforme. */
+function fondDe(img){
+  const t = 72;
+  const c = document.createElement("canvas");
+  c.width = c.height = t;
+  const x = c.getContext("2d", {willReadFrequently:true});
+  x.drawImage(img, 0, 0, t, t);
+  const px = x.getImageData(0, 0, t, t).data;
+  const bord = [];
+  for(let i = 0; i < t; i++){ bord.push(i); bord.push((t-1)*t + i); }
+  for(let y = 1; y < t-1; y++){ bord.push(y*t); bord.push(y*t + t-1); }
+  const rs = [], gs = [], bs = [];
+  bord.forEach(i => { rs.push(px[i*4]); gs.push(px[i*4+1]); bs.push(px[i*4+2]); });
+  const med = a => { a.slice().sort((p2,q2)=>p2-q2); a.sort((p2,q2)=>p2-q2); return a[a.length >> 1]; };
+  const r = med(rs), g = med(gs), b = med(bs);
+  const seuil2 = AVATAR_SEUIL * AVATAR_SEUIL;
+  let daccord = 0;
+  bord.forEach(i => {
+    const o = i*4, dr = px[o]-r, dg = px[o+1]-g, db = px[o+2]-b;
+    if(dr*dr + dg*dg + db*db <= seuil2) daccord++;
+  });
+  return { r:r, g:g, b:b, accord: daccord / bord.length };
+}
+
+async function avatarPrepare(fichier, detourer){
+  const img = await avatarCharge(fichier);
+  const cote = AVATAR_COTE;
+  const l = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  if(!l || !h) throw new Error("dimensions inconnues");
+  const c = document.createElement("canvas");
+  c.width = c.height = cote;
+  const ctx = c.getContext("2d", {willReadFrequently:true});
+
+  const deja = detourer && avatarDejaDetouree(img, l, h);
+  /* Un pourtour qui n'est pas très majoritairement d'une seule couleur — photo,
+     dégradé, ou sujet qui déborde du cadre — ne se découpe pas proprement.
+     Mieux vaut l'image entière qu'un sujet amputé. */
+  const ref = detourer && !deja ? fondDe(img) : null;
+  const uni = !!ref && ref.accord >= 0.85;
+  const decoupe = detourer && !deja && uni;
+  /* Pour détourer, l'image entre en entier dans le cadre, avec une marge : le
+     remplissage part des bords, il lui faut du fond à ronger. Sans découpe, on
+     remplit le cadre : un avatar rond ne doit pas flotter dans du vide. */
+  const k = decoupe ? Math.min((cote-8)/l, (cote-8)/h) : Math.max(cote/l, cote/h);
+  if(decoupe){
+    /* La marge ajoutée est peinte du fond : sinon le remplissage part d'un vide
+       noir et n'atteint jamais la vraie couleur de fond. */
+    ctx.fillStyle = "rgb(" + ref.r + "," + ref.g + "," + ref.b + ")";
+    ctx.fillRect(0, 0, cote, cote);
+  }
+  ctx.drawImage(img, (cote - l*k)/2, (cote - h*k)/2, l*k, h*k);
+
+  const etat = decoupe ? avatarDetoure(ctx, cote, ref)
+                       : (deja ? "deja" : (ref && !uni ? "nonuni" : "non"));
+  const blob = await new Promise(res => c.toBlob(res, "image/png"));
+  if(!blob) throw new Error("conversion en PNG refusée");
+  return { blob: blob, etat: etat };
+}
+
+async function avatarPackEnvoie(blob, nom){
+  const fd = new FormData();
+  fd.append("payload", JSON.stringify({name: nom}));
+  fd.append("media", blob, "avatar.png");
+  const r = await fetch(avecSalon("/api/avatarpack"), {method:"POST", body:fd, headers:enTetes()});
+  if(r.status === 401){ demandeCle(); throw new Error("code d'animateur demandé"); }
+  if(!r.ok) throw new Error("refus du serveur");
+  const d = await r.json();
+  if(!d || !d.ok) throw new Error((d && d.error) || "refus du serveur");
+  return d;
+}
+
+function avatarsDialog(){
+  if(!partieActive()){
+    const m0 = modal('<h2>Images d\'avatars</h2><div class="body">'+
+      '<p class="hint">Ces images ne servent qu\'aux joueurs connectés : il faut donc une partie ouverte. '+
+      'Lance le serveur, attends que la pastille du salon apparaisse en haut de la page, puis reviens ici.</p>'+
+    '</div><div class="foot"><button class="btn btn-gold" data-x="ok">Fermer</button></div>');
+    m0.root.querySelector('[data-x="ok"]').onclick = m0.close;
+    return;
+  }
+
+  const m = modal('<h2>Images d\'avatars</h2><div class="body">'+
+    '<p class="hint">Ces images s\'ajoutent aux figures dessinées par l\'appli : chaque joueur choisit la sienne '+
+    'depuis son téléphone. Elles ne quittent pas la partie en cours et disparaissent avec le salon.</p>'+
+    '<div class="btn-row">'+
+      '<label class="btn btn-outline" style="cursor:pointer">Ajouter des images'+
+        '<input type="file" accept="image/*" multiple id="avFiles" hidden></label>'+
+      '<span class="hint" id="avProg"></span>'+
+    '</div>'+
+    '<label class="switch" style="align-items:flex-start">'+
+      '<input type="checkbox" id="avCut" checked><span class="track" style="margin-top:2px"></span>'+
+      '<span class="txt"><strong>Détourer le fond uni</strong><br>'+
+      '<span class="hint">Le fond d\'une seule couleur devient transparent et le sujet se découpe dans le rond. '+
+      'Une photo au fond chargé est gardée telle quelle.</span></span></label>'+
+    '<hr class="rule">'+
+    '<div class="panel-hd"><h3>Le pack</h3><span class="pill" id="avCount">…</span></div>'+
+    '<div id="avList"><p class="hint">Lecture du pack…</p></div>'+
+  '</div><div class="foot"><button class="btn btn-gold" data-x="ok">Terminé</button></div>');
+
+  m.root.querySelector('[data-x="ok"]').onclick = m.close;
+
+  let pack = [];
+  const prog = t => { const e = m.root.querySelector("#avProg"); if(e) e.textContent = t || ""; };
+
+  async function montre(){
+    const p = await avatarPackLit();
+    if(!m.root.isConnected) return;   /* fermé pendant l'aller-retour */
+    const liste = m.root.querySelector("#avList");
+    const cpt   = m.root.querySelector("#avCount");
+    if(p === null){
+      cpt.textContent = "?";
+      liste.innerHTML = '<p class="hint">Le serveur n\'a pas répondu : le pack ne peut pas être affiché pour l\'instant.</p>';
+      return;
+    }
+    pack = p;
+    cpt.textContent = pack.length + " image" + (pack.length > 1 ? "s" : "") + " sur " + AVATARS_MAX;
+    liste.innerHTML = pack.length
+      ? '<div class="av-pack">' + pack.map(a =>
+          '<div class="av-item">'+
+            '<div class="av-vig"><img src="'+esc(avatarImgURL(a.id))+'" alt="" loading="lazy"></div>'+
+            '<button class="icon-btn danger" data-av="'+esc(a.id)+'" title="Retirer cette image">✕</button>'+
+            '<span class="av-nom" title="'+esc(a.name || "")+'">'+esc(a.name || "sans nom")+'</span>'+
+          '</div>').join("") + '</div>'
+      : '<p class="hint">Aucune image pour l\'instant : les joueurs n\'ont que les figures dessinées.</p>';
+
+    /* La confirmation prend la place de ce dialogue — il n'y a qu'un calque de
+       modale. On le rouvre ensuite, sans quoi l'animateur se retrouve devant
+       la page nue après avoir retiré une image. */
+    liste.querySelectorAll("[data-av]").forEach(b => b.onclick = async ()=>{
+      const a = pack.find(x => x.id === b.dataset.av);
+      const oui = await confirmBox("Retirer cette image ?",
+        "<strong>"+esc((a && a.name) || "Cette image")+"</strong> ne sera plus proposée. "+
+        "Les joueurs qui l'avaient choisie retrouveront une figure dessinée.", "Retirer", true);
+      if(oui){
+        const r = await partiePost("/api/avatarpackdel", {id: b.dataset.av});
+        if(r) toast("Image retirée.");
+        else  toast("Le serveur n'a pas retiré l'image.", "bad", 4000);
+      }
+      avatarsDialog();
+    });
+  }
+
+  /* Un par un : chaque image passe par un canevas, et une rafale de gros
+     fichiers gèlerait la page si on ne rendait pas la main entre deux. */
+  m.root.querySelector("#avFiles").onchange = async e => {
+    const fichiers = [...e.target.files];
+    e.target.value = "";   /* pour pouvoir reprendre le même fichier après un échec */
+    if(!fichiers.length) return;
+    const detourer = m.root.querySelector("#avCut").checked;
+    let ajoutees = 0, ratees = 0;
+
+    for(let i = 0; i < fichiers.length; i++){
+      if(pack.length + ajoutees >= AVATARS_MAX){
+        toast("Le pack est plein : " + AVATARS_MAX + " images au maximum.", "bad", 5000);
+        break;
+      }
+      const f = fichiers[i];
+      prog("Image " + (i+1) + " sur " + fichiers.length + " — " + f.name + "…");
+      await new Promise(r => setTimeout(r, 0));   /* laisse l'affichage suivre */
+      try{
+        const p = await avatarPrepare(f, detourer);
+        await avatarPackEnvoie(p.blob, f.name);
+        ajoutees++;
+        const dit = {
+          nonuni: "son fond n'est pas d'une seule couleur : elle est ajoutée telle quelle.",
+          vide:   "elle est presque entièrement de la couleur du fond : ajoutée telle quelle.",
+          rien:   "aucun fond uni à retirer : ajoutée telle quelle."
+        }[p.etat];
+        if(dit) toast("« " + f.name + " » — " + dit, "bad", 5000);
+      }catch(err){
+        ratees++;   /* un échec ne doit pas emporter les fichiers suivants */
+        toast("« " + f.name + " » refusée" + (err && err.message ? " : " + err.message : "") + ".", "bad", 5000);
+      }
+      if(!m.root.isConnected) return;   /* dialogue fermé en cours de route */
+    }
+    prog(ajoutees + " ajoutée" + (ajoutees > 1 ? "s" : "") + (ratees ? ", " + ratees + " en échec" : "") + ".");
+    montre();
+  };
+
+  montre();
 }
 
 /* ============================================================
