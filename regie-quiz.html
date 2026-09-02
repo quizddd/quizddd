@@ -580,7 +580,10 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
   position:relative; transition:box-shadow .2s, transform .2s;
 }
 .tcard.buzzed{box-shadow:0 0 0 2px var(--rose), var(--shadow-2)}
-.tcard .thd{display:flex; align-items:baseline; justify-content:space-between; gap:8px}
+/* Trois enfants depuis l'arrivee des avatars : sans flex:1 sur le nom,
+   « space-between » ecarte les elements et detache le nom de sa figure. */
+.tcard .thd{display:flex; align-items:center; gap:8px}
+.tcard .tname{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .tcard .tname{font-weight:700; font-size:.93rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .tcard .tscore{
   font-family:var(--f-display); font-size:1.7rem; font-weight:700; line-height:1;
@@ -619,7 +622,7 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
 .av{
   width:var(--t,40px); height:var(--t,40px); border-radius:50%; overflow:hidden;
   background:var(--surface-3); display:block; line-height:0;
-}
+ flex:none;}
 .av img,.av svg{width:100%; height:100%; display:block; object-fit:cover}
 
 /* L'en-tête de carte s'aligne sur la ligne de base du nom ; l'avatar n'a pas
@@ -985,7 +988,7 @@ const shortLabel = qq => (qq.text||"").trim().replace(/\s+/g," ").slice(0,60);
 const S = { view:"library", list:[], quiz:null, selQ:null, play:null };
 /* Remplace a la construction. Sert a verifier d'un coup d'oeil qu'un onglet
    ouvert de longue date n'est pas reste sur une ancienne version. */
-const VERSION = "01/09/2026 à 16:51";
+const VERSION = "03/09/2026 à 00:07";
 const MAIN = $("#main"), MARQ = $("#marquee");
 
 const VIEWS = [
@@ -1967,6 +1970,8 @@ function viewPlay(){
   if($("#tShowQ")) $("#tShowQ").onclick = ()=>{
     p.questionCachee = !p.questionCachee;
     if(typeof partieMontreQuestion === "function") partieMontreQuestion(p.questionCachee);
+    /* L'énoncé enfin visible : les joueurs peuvent répondre, le chrono part. */
+    if(!p.questionCachee) chronoAuLancement();
     viewPlay();
   };
   if($("#tBuzzReset")) $("#tBuzzReset").onclick = ()=>{
@@ -2043,7 +2048,9 @@ function avatarHTML(id, taille){
     const salon = (typeof PARTIE !== "undefined" && PARTIE.code) ? PARTIE.code : "";
     const url = "/api/avatarimg?room=" + encodeURIComponent(salon) +
                 "&id=" + encodeURIComponent(s.slice(2));
-    return '<span class="av"'+dim+'><img src="'+esc(url)+'" alt=""></span>';
+    /* Meme repli que la page joueur : entre le retrait d'une image et le tour de
+     boucle suivant, l'animateur verrait une icone cassee sur ses cartes. */
+  return '<span class="av"'+dim+'><img src="'+esc(url)+'" alt="" onerror="this.remove()"></span>';
   }
   return '<span class="av"'+dim+'>'+avatarSVG(s)+'</span>';
 }
@@ -2229,6 +2236,7 @@ async function renderStage(){
   if($("#showMedia")) $("#showMedia").onclick = ()=>{
     S.play.shown = true;
     if(typeof partieLanceMedia === "function") partieLanceMedia();
+    chronoAuLancement();
     renderStage();
   };
   if($("#mstage") && !hideIt && !garde) await mountMedia($("#mstage"), q.media, true);
@@ -2281,7 +2289,7 @@ async function mountMedia(host, m, isMain){
   if(m.kind === "image"){
     host.innerHTML = '<img id="stageImg" alt="Image de la question" src="'+esc(src)+'" style="filter:blur('+(isMain?S.play.blur:0)+'px)">'+
       (isMain ? curseurFlou(m) : "");
-    if(isMain) brancheFlou($m("#stageImg"));
+    if(isMain){ brancheFlou($m("#stageImg")); chronoAuLancement(); }
     return;
   }
   if(m.kind === "video"){
@@ -2308,7 +2316,8 @@ async function mountMedia(host, m, isMain){
         if(m.stop && v.currentTime >= m.stop){ v.pause(); finishVideo(host, v, m, isMain); }
       };
       v.onended = ()=> finishVideo(host, v, m, isMain);
-      if(isMain) v.onseeked = v.onplay = v.onpause = ()=> suitLecture(v);
+      if(isMain) v.onseeked = v.onpause = ()=> suitLecture(v);
+      if(isMain) v.onplay = ()=>{ suitLecture(v); chronoAuLancement(); };
     }
     return;
   }
@@ -2360,7 +2369,8 @@ async function mountMedia(host, m, isMain){
     if(cur) cur.textContent = fmtClock(Math.max(0, a.currentTime-from));
     if(m.stop && a.currentTime >= m.stop){ a.pause(); }
   };
-  a.onplay  = ()=>{ btn.textContent = "❚❚"; if(isMain){ startVisualizer(a); suitLecture(a); } };
+  a.onplay  = ()=>{ btn.textContent = "❚❚";
+    if(isMain){ startVisualizer(a); suitLecture(a); chronoAuLancement(); } };
   a.onpause = ()=>{ btn.textContent = "▶"; if(isMain) suitLecture(a); };
   a.onended = ()=>{ btn.textContent = "▶"; };
   if(isMain) a.onseeked = ()=> suitLecture(a);
@@ -2550,11 +2560,30 @@ function gotoQ(i){
   SCENE_SIG = "";
   const p = S.play;
   p.i = i; p.phase = "question"; p.buzzes = []; p.blur = null; p.shown = false; p.peek = false; p.endAt = 0;
+  p.chronoLance = false;
   /* Réglé avant l'affichage : la question part aux joueurs à la fin de
      viewPlay(), et elle doit partir déjà masquée si la fiche le demande. */
   p.questionCachee = !!list[i].q.hideText;
   viewPlay();
-  if(S.quiz.settings.autoStart && qTimer(curItem().q, S.quiz) > 0) startTimer();
+  /* Une question qui repose sur un média ne doit pas voir son chrono tourner
+     pendant le chargement, ni pendant que l'animateur la présente. Il partira
+     quand l'extrait démarre vraiment, ou quand l'énoncé retenu est affiché.
+     Une question libre ou un QCM, eux, sont lisibles tout de suite. */
+  const q0 = curItem().q;
+  const attend = (q0.media && q0.media.kind !== "none") || !!q0.hideText;
+  if(!attend && S.quiz.settings.autoStart && qTimer(q0, S.quiz) > 0) startTimer();
+}
+
+/* Le chrono part au moment où les joueurs reçoivent vraiment de quoi répondre,
+   et une seule fois par question : rejouer l'extrait ne le relance pas. */
+function chronoAuLancement(){
+  const p = S.play;
+  if(!p || p.chronoLance || p.running || p.endAt) return;
+  if(!S.quiz || !S.quiz.settings.autoStart) return;
+  const it = curItem();
+  if(!it || qTimer(it.q, S.quiz) <= 0) return;
+  p.chronoLance = true;
+  startTimer();
 }
 /* Casse et espaces en trop ne devraient pas coûter un point : « lima », « Lima »
    et «  Lima  » sont la même réponse. Le reste — orthographe approximative,
@@ -2760,6 +2789,13 @@ function toggleFullscreen(){
   background:var(--surface-3); border:1px solid var(--line-soft);
 }
 .av-vig img{width:100%; height:100%; object-fit:cover; display:block}
+/* Une image livree avec l'application ne se retire pas d'ici : le losange
+   remplace la croix, pour que ce soit visible sans explication. */
+.av-item .av-fixe{
+  position:absolute; top:6px; right:6px; width:22px; height:22px;
+  display:grid; place-items:center; border-radius:50%;
+  background:var(--gold-dim); color:var(--gold); font-size:.7rem;
+}
 .av-nom{
   font-size:.74rem; color:var(--text-3); text-align:center;
   max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -3225,10 +3261,15 @@ function avatarsDialog(){
 
   const m = modal('<h2>Images d\'avatars</h2><div class="body">'+
     '<p class="hint">Ces images s\'ajoutent aux figures dessinées par l\'appli : chaque joueur choisit la sienne '+
-    'depuis son téléphone. Elles ne quittent pas la partie en cours et disparaissent avec le salon.</p>'+
+    'depuis son téléphone. Celles que tu ajoutes ici <strong>disparaissent avec le salon</strong>. '+
+    'Pour qu\'elles restent définitivement, et pour tous les animateurs, sers-toi de '+
+    '« Préparer pour le dépôt » puis dépose les fichiers obtenus dans le dossier '+
+    '<code>avatars/</code> de ton dépôt GitHub.</p>'+
     '<div class="btn-row">'+
       '<label class="btn btn-outline" style="cursor:pointer">Ajouter des images'+
         '<input type="file" accept="image/*" multiple id="avFiles" hidden></label>'+
+      '<label class="btn btn-outline" style="cursor:pointer">Préparer pour le dépôt'+
+        '<input type="file" accept="image/*" multiple id="avExport" hidden></label>'+
       '<span class="hint" id="avProg"></span>'+
     '</div>'+
     '<label class="switch" style="align-items:flex-start">'+
@@ -3242,6 +3283,35 @@ function avatarsDialog(){
   '</div><div class="foot"><button class="btn btn-gold" data-x="ok">Terminé</button></div>');
 
   m.root.querySelector('[data-x="ok"]').onclick = m.close;
+
+  /* Prépare des fichiers à déposer dans le dépôt : même traitement que pour un
+     envoi, mais le résultat est enregistré au lieu de partir au serveur. Une
+     image posée dans avatars/ est là pour tout le monde, définitivement. */
+  const champExport = m.root.querySelector("#avExport");
+  if(champExport) champExport.onchange = async e => {
+    const fichiers = [...(e.target.files || [])];
+    e.target.value = "";
+    if(!fichiers.length) return;
+    const detourer = m.root.querySelector("#avCut").checked;
+    let faits = 0;
+    for(const f of fichiers){
+      prog("Préparation " + (faits + 1) + " / " + fichiers.length + "…");
+      try{
+        const p2 = await avatarPrepare(f, detourer);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(p2.blob);
+        a.download = (f.name.replace(/\.[^.]+$/, "") || "avatar").slice(0, 40) + ".png";
+        a.click();
+        setTimeout(()=> URL.revokeObjectURL(a.href), 20000);
+        faits++;
+      }catch(err){
+        toast("« " + f.name + " » n'a pas pu être préparée.", "bad", 4000);
+      }
+    }
+    prog("");
+    if(faits) toast(faits + " image" + (faits > 1 ? "s" : "") + " enregistrée" +
+      (faits > 1 ? "s" : "") + ". Dépose-les dans le dossier avatars/ de ton dépôt.", "good", 7000);
+  };
 
   let pack = [];
   const prog = t => { const e = m.root.querySelector("#avProg"); if(e) e.textContent = t || ""; };
@@ -3257,12 +3327,16 @@ function avatarsDialog(){
       return;
     }
     pack = p;
-    cpt.textContent = pack.length + " image" + (pack.length > 1 ? "s" : "") + " sur " + AVATARS_MAX;
+    const fixes = pack.filter(a => a.fixe).length;
+    cpt.textContent = pack.length + " image" + (pack.length > 1 ? "s" : "") +
+      (fixes ? " · " + fixes + " du dépôt" : "");
     liste.innerHTML = pack.length
       ? '<div class="av-pack">' + pack.map(a =>
           '<div class="av-item">'+
             '<div class="av-vig"><img src="'+esc(avatarImgURL(a.id))+'" alt="" loading="lazy"></div>'+
-            '<button class="icon-btn danger" data-av="'+esc(a.id)+'" title="Retirer cette image">✕</button>'+
+            (a.fixe
+              ? '<span class="av-fixe" title="Livrée avec l\'application">\u25c6</span>'
+              : '<button class="icon-btn danger" data-av="'+esc(a.id)+'" title="Retirer cette image">✕</button>')+
             '<span class="av-nom" title="'+esc(a.name || "")+'">'+esc(a.name || "sans nom")+'</span>'+
           '</div>').join("") + '</div>'
       : '<p class="hint">Aucune image pour l\'instant : les joueurs n\'ont que les figures dessinées.</p>';

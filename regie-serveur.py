@@ -33,6 +33,7 @@ import webbrowser
 from aiohttp import web
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+AVATARS_DIR = os.path.join(HERE, "avatars")
 CONSOLE = os.path.join(HERE, "regie-quiz.html")
 JOUEUR = os.path.join(HERE, "joueur.html")
 
@@ -85,7 +86,7 @@ def avatar_valide(salon, valeur, nom):
             return "g:%d" % n
     elif v.startswith("c:"):
         ident = v[2:]
-        if any(a["id"] == ident for a in salon.avatars):
+        if any(a["id"] == ident for a in salon.tout_le_pack()):
             return v
     return avatar_defaut(nom)
 
@@ -103,6 +104,46 @@ def type_image(annonce, nom=""):
     ext = os.path.splitext(nom or "")[1].lower()
     return {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
             ".gif": "image/gif", ".webp": "image/webp"}.get(ext, "image/png")
+
+
+# Pack livre avec l'application : lu une fois au demarrage, partage par toutes
+# les parties. Contrairement aux images deposees en cours de soiree, il survit
+# aux redemarrages et ne depend pas de l'animateur qui anime.
+PACK_FIXE = []
+
+
+def charge_pack_fixe():
+    """Lit le dossier avatars/. Un fichier ajoute au depot devient une figure
+    proposee a tous, sans que personne n'ait rien a redeposer."""
+    del PACK_FIXE[:]
+    if not os.path.isdir(AVATARS_DIR):
+        return
+    exts = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif": "image/gif", ".webp": "image/webp"}
+    for nom in sorted(os.listdir(AVATARS_DIR)):
+        ext = os.path.splitext(nom)[1].lower()
+        if ext not in exts:
+            continue
+        chemin = os.path.join(AVATARS_DIR, nom)
+        try:
+            with open(chemin, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        if not data:
+            continue
+        if len(data) > AVATAR_MAX:
+            # Sans ce mot, l'animateur cherche longtemps pourquoi son image
+            # n'apparait pas : elle est simplement trop lourde.
+            say("Avatar ignore : %s fait %.0f Ko, la limite est de %d Ko"
+                % (nom, len(data) / 1024.0, AVATAR_MAX // 1024))
+            continue
+        PACK_FIXE.append({"id": "f_" + os.path.splitext(nom)[0][:40],
+                          "name": os.path.splitext(nom)[0][:40],
+                          "type": exts[ext], "data": data, "fixe": True})
+    if PACK_FIXE:
+        poids = sum(len(a["data"]) for a in PACK_FIXE) / 1024.0
+        say("Pack d'avatars du depot : %d images (%.0f Ko)" % (len(PACK_FIXE), poids))
 
 
 # ------------------------------------------------------------------- salons
@@ -154,6 +195,10 @@ class Salon:
             n += len(self.pre_media["data"])
         return n
 
+    def tout_le_pack(self):
+        """Les images du depot d'abord, puis celles deposees ce soir."""
+        return PACK_FIXE + self.avatars
+
     def poids_avatars(self):
         return sum(len(a["data"]) for a in self.avatars)
 
@@ -197,7 +242,8 @@ class Salon:
             "buzzWinner": (None if self.buzz_gagnant is None else
                            {"userId": self.buzz_gagnant,
                             "name": self.joueurs.get(self.buzz_gagnant, {}).get("name", "?")}),
-            "pack": [{"id": a["id"], "name": a["name"]} for a in self.avatars],
+            "pack": [{"id": a["id"], "name": a["name"], "fixe": bool(a.get("fixe"))}
+                     for a in self.tout_le_pack()],
             "questionHidden": self.q_cachee,
             "chat": self.chat[-60:],
         }
@@ -216,7 +262,8 @@ class Salon:
             "players": sorted(j["name"] for j in self.joueurs.values()),
             "avatars": {j.get("name", "?"): (j.get("avatar") or avatar_defaut(j.get("name") or ""))
                         for j in self.joueurs.values()},
-            "pack": [{"id": a["id"], "name": a["name"]} for a in self.avatars],
+            "pack": [{"id": a["id"], "name": a["name"], "fixe": bool(a.get("fixe"))}
+                     for a in self.tout_le_pack()],
             "monAvatar": self.avatar_de(pid),
             "question": self.question_pour_joueur(),
             "questionHidden": self.q_cachee,
@@ -971,6 +1018,10 @@ async def h_avatarpackdel(request):
     if s is None:
         return rep({"ok": False, "error": "salon inconnu"}, status=404)
     body = await request.json()
+    # Une image du depot n'est pas retirable depuis l'interface : elle
+    # appartient a l'application, on l'enleve en modifiant le depot.
+    if str(body.get("id") or "").startswith("f_"):
+        return rep({"ok": False, "error": "image livree avec l'application"}, status=403)
     ident = (body.get("id") or "").strip()
     reste = [a for a in s.avatars if a["id"] != ident]
     if len(reste) == len(s.avatars):
@@ -991,7 +1042,7 @@ async def h_avatarimg(request):
     if s is None:
         return web.Response(status=404, text="salon inconnu")
     ident = request.query.get("id") or ""
-    for a in s.avatars:
+    for a in s.tout_le_pack():
         if a["id"] == ident:
             # Une image du pack ne change jamais : le navigateur peut la garder.
             return web.Response(body=a["data"], content_type=a["type"],
@@ -1029,6 +1080,7 @@ async def h_jouer(request):
 
 
 def build_app():
+    charge_pack_fixe()
     app = web.Application(client_max_size=64 * 1024 * 1024)
     r = app.router
     r.add_get("/", h_racine)

@@ -1,0 +1,16 @@
+Dossier des avatars permanents.
+
+Chaque image PNG, JPG, GIF ou WEBP posee ici est proposee aux joueurs comme
+figure, dans toutes les parties et pour tous les animateurs. Contrairement aux
+images ajoutees en cours de soiree par le bouton « Avatars », celles-ci
+survivent aux redemarrages : elles font partie de l'application.
+
+Comment en ajouter
+  1. Dans la console, bouton « Avatars », puis « Preparer pour le depot » :
+     tes images sont recadrees en 256 px, detourees si leur fond est uni, et
+     enregistrees sur ton ordinateur.
+  2. Depose les fichiers obtenus dans ce dossier.
+  3. Envoie le dossier sur GitHub, comme les autres fichiers.
+
+Le nom du fichier sert de nom a la figure. Une image de plus de 400 Ko est
+ignoree. Pour en retirer une, supprime le fichier du depot.

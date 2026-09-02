@@ -131,6 +131,37 @@ input::placeholder{color:var(--text-3)}
 .media video,.media iframe{width:100%; border-radius:var(--r-l); background:#000;
   aspect-ratio:16/9; border:0; display:block}
 .media audio{width:100%}
+
+/* Sur un téléphone, une image de question se lit mal dans un coin d'écran.
+   Le bouton reste discret : il ne doit pas manger le média. */
+.plein{
+  align-self:flex-end; display:inline-flex; align-items:center; gap:6px;
+  padding:5px 11px; border-radius:999px; cursor:pointer;
+  background:var(--surface); border:1px solid var(--line-soft);
+  color:var(--text-2); font-size:.82rem;
+}
+.plein:hover{border-color:var(--gold); color:var(--gold)}
+/* En plein écran, l'élément est seul : on le centre sur fond noir. */
+.media img:fullscreen, .media video:fullscreen{
+  max-height:100%; max-width:100%; width:auto; height:auto;
+  background:#000; border-radius:0; object-fit:contain;
+}
+/* Repli quand le navigateur refuse le plein écran, ou ne le propose pas du
+   tout pour une image — c'est le cas sur iPhone. On agrandit sur place. */
+/* Selecteur a deux classes : il doit l'emporter sur « .media img », qui plafonne
+   la hauteur a 46vh — sans ca l'image « agrandie » reste petite. Et le calage sur
+   les quatre bords vaut mieux que 100vh, que la barre du navigateur mobile fausse. */
+.media .agrandi, .agrandi{
+  position:fixed; inset:0; z-index:90; width:100%; height:100%;
+  max-width:none; max-height:none; margin:0; border-radius:0;
+  background:#000; object-fit:contain;
+}
+.fermer-agrandi{
+  position:fixed; top:calc(10px + env(safe-area-inset-top)); right:12px; z-index:91;
+  padding:9px 15px; border-radius:999px; cursor:pointer;
+  background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.35); color:#fff;
+  font-size:.95rem;
+}
 /* Lien YouTube sur une question audio : le lecteur reste, mais couvert. */
 .audio-yt{position:relative; width:100%; height:130px; border-radius:var(--r-l);
   overflow:hidden; background:var(--surface)}
@@ -345,7 +376,7 @@ let ME = { code:"", playerId:"", name:"", avatar:"" };
 let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
 let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "", BANDEAU_VU = "";
 let AV_ENVOI = null;
-const VERSION = "01/09/2026 à 16:51";
+const VERSION = "03/09/2026 à 00:07";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
@@ -410,7 +441,10 @@ function avatarSVG(id){
    l'animateur ; tout le reste se dessine sur place. */
 function avatarHTML(id, taille){
   const v = String(id == null ? "" : id);
-  const dim = ' style="width:'+taille+'px;height:'+taille+'px"';
+  /* Une taille absente donnerait « width:undefinedpx » : declaration invalide,
+     pastille de zero pixel, avatar invisible et rien pour le signaler. */
+  const t = Math.round(Number(taille) || 32);
+  const dim = ' style="width:'+t+'px;height:'+t+'px"';
   if(v.slice(0,2) === "c:"){
     const u = "/api/avatarimg?room=" + encodeURIComponent(ME.code) +
               "&id=" + encodeURIComponent(v.slice(2));
@@ -494,7 +528,8 @@ function vueEntree(erreur){
         '<p class="note">Les images de l’animateur se choisissent une fois entré.</p></div>'+
       '<button class="btn btn-gold btn-lg" id="go">Entrer</button>'+
       '<p class="err" id="err">'+esc(erreur||"")+'</p>'+
-      '<p class="note">Aucune inscription. Ton pseudo suffit, et il reste sur cet appareil.</p>'+
+      '<p class="note">Aucune inscription. Ton pseudo suffit, et il reste sur cet appareil.<br>'+
+        '<span style="opacity:.55">Version du '+esc(VERSION)+'</span></p>'+
     '</div>';
   brancherGrille($("#avEntree"), id => { ME.avatar = id; });
   const go = ()=> rejoindre($("#code").value, $("#nom").value);
@@ -609,6 +644,7 @@ function dessiner(){
   if(cle !== VU){ VU = cle; construire(); }
   majChrono();
   majAvatars();
+  majPanneauAvatars();
   appliqueFlou();
   suivreMedia();
   suivreBuzz();
@@ -932,6 +968,60 @@ function ajouteVolume(hote){
   };
 }
 
+/* Plein écran, avec les deux replis qui comptent : le préfixe WebKit pour les
+   anciens navigateurs, et la méthode propre à la vidéo sur iPhone, où l'API
+   générale n'existe pas. */
+function sortAgrandi(el){
+  el.classList.remove("agrandi");
+  const b = $(".fermer-agrandi");
+  if(b) b.remove();
+  document.removeEventListener("keydown", el._echap || (()=>{}));
+}
+
+/* Repli maison : l'élément couvre l'écran, avec de quoi en sortir. */
+function agrandirSurPlace(el){
+  if(el.classList.contains("agrandi")) return sortAgrandi(el);
+  el.classList.add("agrandi");
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "fermer-agrandi";
+  b.textContent = "Fermer";
+  b.onclick = ()=> sortAgrandi(el);
+  document.body.appendChild(b);
+  el._echap = e => { if(e.key === "Escape") sortAgrandi(el); };
+  document.addEventListener("keydown", el._echap);
+}
+
+/* On demande le vrai plein écran, et on se rabat sur l'agrandissement dès qu'il
+   n'est pas possible : sur iPhone une image n'y a pas droit du tout, et certains
+   navigateurs refusent la demande sans rien dire. */
+function pleinEcran(el){
+  if(el.classList.contains("agrandi")) return sortAgrandi(el);
+  if(document.fullscreenElement || document.webkitFullscreenElement){
+    try{ (document.exitFullscreen || document.webkitExitFullscreen).call(document); }catch(e){}
+    return;
+  }
+  if(el.webkitEnterFullscreen && el.tagName === "VIDEO"){
+    try{ el.webkitEnterFullscreen(); return; }catch(e){}
+  }
+  const f = el.requestFullscreen || el.webkitRequestFullscreen;
+  if(!f) return agrandirSurPlace(el);
+  try{
+    const r = f.call(el);
+    if(r && r.catch) r.catch(()=> agrandirSurPlace(el));
+  }catch(e){ agrandirSurPlace(el); }
+}
+
+function boutonPleinEcran(hote, el){
+  if(!hote || !el) return;
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "plein";
+  b.innerHTML = '<span aria-hidden="true">\u2922</span> Plein écran';
+  b.onclick = ()=> pleinEcran(el);
+  hote.appendChild(b);
+}
+
 function monterMedia(){
   const hote = $("#media"), d = ETAT, m = d.media;
   if(!hote || (!m && !d.mediaUrl)) return;
@@ -973,6 +1063,7 @@ function monterMedia(){
     }
     if(genre === "image"){
       hote.innerHTML = '<img alt="Image de la question" src="'+esc(d.mediaUrl)+'">';
+      boutonPleinEcran(hote, hote.querySelector("img"));
       return;
     }
     const balise = genre === "video" ? "video" : "audio";
@@ -985,6 +1076,7 @@ function monterMedia(){
       if(decalage > 0 && decalage < (el.duration||1e9)) el.currentTime = decalage;
       if(dep.joue) lancer(el, hote);
     };
+    if(balise === "video") boutonPleinEcran(hote, el);
     el.onerror = ()=>{ const n = $("#extNote"); if(n) n.textContent = "Média indisponible depuis ce lien."; };
     return;
   }
@@ -993,6 +1085,7 @@ function monterMedia(){
 
   if(m.kind === "image"){
     hote.innerHTML = '<img alt="Image de la question" src="'+src+'">';
+    boutonPleinEcran(hote, hote.querySelector("img"));
     return;
   }
   if(m.kind === "video"){
@@ -1006,6 +1099,7 @@ function monterMedia(){
       if(decalage > 0 && decalage < (v.duration||1e9)) v.currentTime = decalage;
       if(dep.joue) lancer(v, hote);
     };
+    boutonPleinEcran(hote, v);
     v.onended = ()=>{ hote.innerHTML = '<div class="done">Extrait terminé</div>'; };
     return;
   }
@@ -1105,9 +1199,26 @@ function ouvrirAvatars(){
   if(!ME.playerId) return;
   const g = $("#avChoix");
   g.innerHTML = grilleAvatars(ME.avatar, true);
+  PACK_VU = (ETAT && ETAT.pack ? ETAT.pack : []).map(a => a.id).join(",");
   $("#avPanneau").hidden = false;
   brancherGrille(g, choisirAvatar);
   $("#avFermer").focus();
+}
+
+/* Le panneau est bati a l'ouverture. Si l'animateur ajoute une image pendant
+   qu'il est ouvert — le cas quand un joueur vient d'en reclamer une — il faut
+   le redessiner, sans perdre le choix en cours. */
+let PACK_VU = "";
+function majPanneauAvatars(){
+  const p = $("#avPanneau");
+  if(!p || p.hidden){ PACK_VU = ""; return; }
+  const sig = (ETAT && ETAT.pack ? ETAT.pack : []).map(a => a.id).join(",");
+  if(sig === PACK_VU) return;
+  PACK_VU = sig;
+  const g = $("#avChoix");
+  if(!g) return;
+  g.innerHTML = grilleAvatars(ME.avatar, true);
+  brancherGrille(g, choisirAvatar);
 }
 
 function fermerAvatars(){
