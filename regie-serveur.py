@@ -68,8 +68,13 @@ def say(*parts):
 # ------------------------------------------------------------------ avatars
 def avatar_defaut(nom):
     """Le pseudo decide de la figure : celui qui revient apres une coupure
-    retrouve la sienne, et deux ecrans affichent la meme."""
-    return "g:%d" % (sum(ord(c) for c in (nom or "")) % AV_N)
+    retrouve la sienne, et deux ecrans affichent la meme. On pioche dans les
+    images du depot ; les figures dessinees ne servent plus que si ce dossier
+    est vide, pour qu'une installation neuve ne soit pas sans visages."""
+    n = sum(ord(c) for c in (nom or ""))
+    if PACK_FIXE:
+        return "c:" + PACK_FIXE[n % len(PACK_FIXE)]["id"]
+    return "g:%d" % (n % AV_N)
 
 
 def avatar_valide(salon, valeur, nom):
@@ -184,6 +189,9 @@ class Salon:
         # Media de la question suivante, envoye pendant que celle-ci se joue :
         # sinon l'animateur reste plusieurs secondes devant un ecran vide.
         self.pre_media = None
+        self.media_offset = 0.0  # « demarrer a 30 s » : le point choisi en fiche
+        self.classement = False  # l'animateur montre le classement a la salle
+        self.brouillons = {}     # qid -> {pid: texte tape sans valider}
 
     def poids_media(self):
         """Octets de media retenus par cette partie, et eux seuls : ce sont les
@@ -245,6 +253,11 @@ class Salon:
             "pack": [{"id": a["id"], "name": a["name"], "fixe": bool(a.get("fixe"))}
                      for a in self.tout_le_pack()],
             "questionHidden": self.q_cachee,
+            "classement": self.classement,
+            "drafts": [{"userId": p, "name": (self.joueurs.get(p) or {}).get("name", "?"),
+                        "value": v}
+                       for p, v in (self.brouillons.get(qid) or {}).items()
+                       if p not in (self.reponses.get(qid) or {})],
             "chat": self.chat[-60:],
         }
 
@@ -276,6 +289,8 @@ class Salon:
             "mediaUrlKind": self.media_url_kind,
             "startedAt": self.debut,
             "mediaStart": self.media_debut,
+            "mediaOffset": self.media_offset,
+            "showScores": self.classement,
             "deadline": self.fin,
             "duree": self.duree,
             "gel": self.gel,
@@ -286,9 +301,12 @@ class Salon:
             "answered": len(self.reponses.get(qid) or {}),
             "buzzWinner": (self.joueurs.get(self.buzz_gagnant, {}).get("name")
                            if self.buzz_gagnant else None),
+            # Un enonce retenu derriere un media : on ne buzze pas avant de
+            # savoir ce qui est demande. Une question purement orale, si.
             "canBuzz": bool(self.question and self.question.get("buzzMode")
                             and self.ouverte and self.buzz_gagnant is None
-                            and pid not in self.buzz_passes),
+                            and pid not in self.buzz_passes
+                            and not (self.q_cachee and (self.media or self.media_url))),
             "buzzSeq": self.buzz_seq,
             "mediaCmd": self.media_cmd,
             "chat": self.chat[-60:],
@@ -300,13 +318,22 @@ class Salon:
         avant, une reponse visible par les autres fausserait la question."""
         if not self.revele or not self.question:
             return []
-        seau = self.reponses.get(self.question["id"]) or {}
+        qid = self.question["id"]
+        seau = self.reponses.get(qid) or {}
         lignes = []
         for pid, r in seau.items():
             j = self.joueurs.get(pid) or {}
             lignes.append({"name": j.get("name", "?"),
                            "value": r.get("value", ""),
-                           "order": r.get("order", 0)})
+                           "order": r.get("order", 0), "brouillon": False})
+        # Ce qui a ete tape sans etre valide compte quand meme : faute de temps,
+        # une bonne reponse ne doit pas disparaitre parce qu'on n'a pas appuye.
+        for pid, v in (self.brouillons.get(qid) or {}).items():
+            if pid in seau or not (v or "").strip():
+                continue
+            j = self.joueurs.get(pid) or {}
+            lignes.append({"name": j.get("name", "?"), "value": v,
+                           "order": 9999, "brouillon": True})
         lignes.sort(key=lambda x: x["order"])
         return lignes
 
@@ -499,6 +526,12 @@ async def h_question(request):
     }
     s.reponses.setdefault(s.question["id"], {})
     s.q_cachee = bool(body.get("questionHidden"))
+    s.classement = False
+    try:
+        s.media_offset = max(0.0, float(body.get("mediaOffset") or 0))
+    except (TypeError, ValueError):
+        s.media_offset = 0.0
+    s.brouillons.setdefault(s.question["id"], {})
     s.media_cmd = {"seq": 0, "pos": 0.0, "playing": True, "at": 0.0}
     s.revele = None
     s.ouverte = True
@@ -789,8 +822,9 @@ async def h_mediacmd(request):
     maintenant = time.time()
     s.media_cmd = {"seq": s.media_cmd["seq"] + 1, "pos": pos,
                    "playing": joue, "at": maintenant}
-    # Un joueur qui arrive apres coup doit tomber au meme endroit.
-    s.media_debut = (maintenant - pos) if joue else 0
+    # On garde la position meme en pause : media_debut a zero veut dire « pas
+    # encore lance », et l'extrait disparaitrait de l'ecran des joueurs.
+    s.media_debut = maintenant - pos
     s.touch()
     return rep({"ok": True})
 
@@ -819,6 +853,37 @@ async def h_chat(request):
     s.chat.append({"id": s.chat_seq, "name": nom, "role": role,
                    "text": texte, "at": time.time()})
     del s.chat[:-200]
+    s.touch()
+    return rep({"ok": True})
+
+
+async def h_draft(request):
+    """Ce que le joueur est en train de taper. Garde de cote, jamais montre aux
+    autres avant la revelation : sinon on lirait la reponse du voisin."""
+    s = salon_de(request)
+    if s is None or s.question is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    pid = (body.get("playerId") or "").strip()
+    if pid not in s.joueurs:
+        return rep({"ok": False}, status=404)
+    seau = s.brouillons.setdefault(s.question["id"], {})
+    seau[pid] = (body.get("value") or "")[:300]
+    # Pas de touch() : un brouillon ne doit pas reveiller toute la salle a
+    # chaque lettre tapee. L'animateur le verra au prochain tour de boucle.
+    s.vu = time.time()
+    return rep({"ok": True})
+
+
+async def h_classement(request):
+    """Montrer ou cacher le classement chez tout le monde."""
+    if not anim_ok(request):
+        return refus()
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False}, status=404)
+    body = await request.json()
+    s.classement = bool(body.get("show"))
     s.touch()
     return rep({"ok": True})
 
@@ -1108,6 +1173,8 @@ def build_app():
     r.add_post("/api/showquestion", h_showquestion)
     r.add_post("/api/mediacmd", h_mediacmd)
     r.add_post("/api/chat", h_chat)
+    r.add_post("/api/draft", h_draft)
+    r.add_post("/api/classement", h_classement)
     r.add_post("/api/buzz", h_buzz)
     r.add_post("/api/avatarpack", h_avatarpack)
     r.add_post("/api/avatarpackdel", h_avatarpackdel)

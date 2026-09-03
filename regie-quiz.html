@@ -988,7 +988,7 @@ const shortLabel = qq => (qq.text||"").trim().replace(/\s+/g," ").slice(0,60);
 const S = { view:"library", list:[], quiz:null, selQ:null, play:null };
 /* Remplace a la construction. Sert a verifier d'un coup d'oeil qu'un onglet
    ouvert de longue date n'est pas reste sur une ancienne version. */
-const VERSION = "03/09/2026 à 00:07";
+const VERSION = "04/09/2026 à 01:27";
 const MAIN = $("#main"), MARQ = $("#marquee");
 
 const VIEWS = [
@@ -1933,6 +1933,9 @@ function viewPlay(){
           ? '<button class="btn btn-outline" id="tShowQ">'+
             (p.questionCachee ? "Afficher la question" : "Masquer la question")+'</button>' : "")+
         (it.q.buzzMode ? '<button class="btn btn-ghost" id="tBuzzReset">Réinitialiser les buzz</button>' : "")+
+        (typeof partieActive==="function" && partieActive()
+          ? '<button class="btn'+(PARTIE.classement ? " btn-gold" : " btn-ghost")+'" id="tScores">'+
+            (PARTIE.classement ? "Masquer le classement" : "Montrer le classement")+'</button>' : "")+
         (typeof PARTIE!=="undefined" && PARTIE.buzzMode && PARTIE.buzzGagnant
           ? '<button class="btn btn-rose" id="tPass">Rendre la main</button>' : "")+
         (typeof partieActive==="function" && partieActive()
@@ -1972,6 +1975,14 @@ function viewPlay(){
     if(typeof partieMontreQuestion === "function") partieMontreQuestion(p.questionCachee);
     /* L'énoncé enfin visible : les joueurs peuvent répondre, le chrono part. */
     if(!p.questionCachee) chronoAuLancement();
+    viewPlay();
+  };
+  if($("#tScores")) $("#tScores").onclick = ()=>{
+    const montre = !PARTIE.classement;
+    PARTIE.classement = montre;
+    if(typeof partieClassement === "function") partieClassement(montre);
+    toast(montre ? "Le classement s'affiche chez tout le monde."
+                 : "Classement masqué.", "good");
     viewPlay();
   };
   if($("#tBuzzReset")) $("#tBuzzReset").onclick = ()=>{
@@ -2269,7 +2280,12 @@ function brancheFlou(el){
 /* Rembobiner, mettre en pause, relancer : ce que l'animateur fait de sa lecture
    doit arriver chez les joueurs, sinon ils écoutent un autre passage que la
    salle. Une iframe YouTube ne se pilote pas sans son API : elle reste libre. */
-function suitLecture(el){
+function suitLecture(el, m){
+  /* « Lecture » part avant que le saut au point de depart soit effectif : sans
+     ce garde-fou on annonce 0, et toute la salle se cale au debut de l'extrait
+     pendant que l'animateur, lui, ecoute a 30 s. */
+  const depart = (m && m.start) || 0;
+  if(depart && el.currentTime < depart - 0.5) return;
   if(typeof partieMediaCmd === "function") partieMediaCmd(el.currentTime, !el.paused);
 }
 
@@ -2310,14 +2326,16 @@ async function mountMedia(host, m, isMain){
       v.onvolumechange = ()=> setVolume(v.volume);
       v.onloadedmetadata = ()=>{
         if(m.start) v.currentTime = m.start;
-        if(isMain) autoPlay(v, host);
+        /* La révélation aussi : sinon l'animateur doit cliquer sur lecture au
+           moment précis où toute la salle regarde son écran. */
+        autoPlay(v, host);
       };
       v.ontimeupdate = ()=>{
         if(m.stop && v.currentTime >= m.stop){ v.pause(); finishVideo(host, v, m, isMain); }
       };
       v.onended = ()=> finishVideo(host, v, m, isMain);
-      if(isMain) v.onseeked = v.onpause = ()=> suitLecture(v);
-      if(isMain) v.onplay = ()=>{ suitLecture(v); chronoAuLancement(); };
+      if(isMain) v.onseeked = v.onpause = ()=> suitLecture(v, m);
+      if(isMain) v.onplay = ()=>{ suitLecture(v, m); chronoAuLancement(); };
     }
     return;
   }
@@ -2370,10 +2388,10 @@ async function mountMedia(host, m, isMain){
     if(m.stop && a.currentTime >= m.stop){ a.pause(); }
   };
   a.onplay  = ()=>{ btn.textContent = "❚❚";
-    if(isMain){ startVisualizer(a); suitLecture(a); chronoAuLancement(); } };
-  a.onpause = ()=>{ btn.textContent = "▶"; if(isMain) suitLecture(a); };
+    if(isMain){ startVisualizer(a); suitLecture(a, m); chronoAuLancement(); } };
+  a.onpause = ()=>{ btn.textContent = "▶"; if(isMain) suitLecture(a, m); };
   a.onended = ()=>{ btn.textContent = "▶"; };
-  if(isMain) a.onseeked = ()=> suitLecture(a);
+  if(isMain) a.onseeked = ()=> suitLecture(a, m);
   btn.onclick = ()=> a.paused ? a.play().catch(()=>toast("Lecture bloquée par le navigateur.","bad")) : a.pause();
   seek.onclick = e => {
     const r = seek.getBoundingClientRect();
@@ -2384,7 +2402,7 @@ async function mountMedia(host, m, isMain){
   /* Les joueurs démarrent dès que la question s'affiche : si l'animateur
      devait cliquer, il entendrait l'extrait après eux, et son clic les
      ferait tous repartir du début. */
-  if(isMain) autoPlay(a, host);
+  autoPlay(a, host);
 }
 /* Lancement automatique. Le navigateur peut refuser une lecture sonore sans
    geste de l'utilisateur : dans ce cas on affiche un gros bouton plutot que de
@@ -2596,18 +2614,31 @@ function normaliseReponse(t){
    validées d'office : c'est la partie fastidieuse et sans enjeu de la
    correction. Aucune réponse n'est jamais refusée automatiquement, et un
    verdict déjà posé à la main n'est jamais écrasé. */
+/* Les lettres attendues d'un QCM, dans l'ordre, telles que le serveur les
+   numérote — avant retrait des propositions vides. */
+function lettresJustes(q){
+  return q.choices.map((c,i)=>({c:c,i:i})).filter(x=>x.c.correct)
+          .map(x=>LETTERS[x.i]).sort().join(",");
+}
+
 function valideLesExactes(it){
   if(typeof partieActive !== "function" || !partieActive()) return 0;
   const q = it.q;
-  if(q.type !== "free") return 0;
-  const attendue = normaliseReponse(q.answer);
+  if(q.type !== "free" && q.type !== "qcm") return 0;
+  const qcm = q.type === "qcm";
+  const attendue = qcm ? lettresJustes(q) : normaliseReponse(q.answer);
   if(!attendue) return 0;
   const pts = qPoints(q, it.round, S.quiz);
   let n = 0;
   S.quiz.teams.forEach(t=>{
     if(awardOf(S.quiz, t.id, q.id)) return;
     const rep = (typeof reponseDe === "function") ? reponseDe(t.id) : null;
-    if(!rep || normaliseReponse(rep.value) !== attendue) return;
+    if(!rep) return;
+    const donnee = qcm
+      ? String(rep.value || "").split(",").map(x=>x.trim().toUpperCase())
+          .filter(Boolean).sort().join(",")
+      : normaliseReponse(rep.value);
+    if(donnee !== attendue) return;
     setAward(t.id, q.id, pts, "Q"+(S.play.i+1)+" — juste (auto)", "full", rep.order || 0);
     n++;
   });
@@ -3568,6 +3599,11 @@ function cycleTheme(){
 }
 .tanswer.got{background:var(--gold-dim); border-color:transparent; color:var(--text); font-weight:600}
 .tanswer.sent{background:var(--mint-dim); border-color:transparent; color:var(--mint); font-weight:600}
+/* Tapee mais jamais validee : lisible, et distincte de celles qui ont ete
+   envoyees — l'animateur doit savoir ce qu'il corrige. */
+.tanswer.got.brouillon{background:transparent; border:1px dashed var(--gold); color:var(--text-2)}
+.tanswer.got.brouillon small{display:block; margin-top:2px; font-size:.66rem;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); font-weight:500}
 .tanswer.none{color:var(--text-3); font-style:italic}
 .tanswer b{font-family:var(--f-mono); font-size:.72rem; font-weight:500; opacity:.6; margin-right:5px}
 .tbonus{
@@ -3599,6 +3635,7 @@ const PARTIE = {
   cle:"",               // code d'animateur, si le serveur en exige un
   joueurs:[], reponses:[], buzz:[], buzzMode:false, buzzGagnant:null,
   chat:[], questionCachee:false, preQ:null, prePret:null,
+  brouillons:[], classement:false,
   v:-1, derniereQ:null, derniereReveal:null, signatureEquipes:"", echecs:0
 };
 
@@ -3813,6 +3850,8 @@ async function partieBoucle(){
       PARTIE.buzzMode = !!s.buzzMode;
       PARTIE.buzzGagnant = s.buzzWinner || null;
       PARTIE.chat = s.chat || [];
+      PARTIE.brouillons = s.drafts || [];
+      PARTIE.classement = !!s.classement;
       PARTIE.questionCachee = !!s.questionHidden;
 
       /* Après un rechargement de page, on adopte la question déjà publiée :
@@ -3869,12 +3908,27 @@ function reponseDe(teamId){
 
 /* Ton écran peut être partagé : tant que la réponse n'est pas révélée, on
    montre seulement qui a répondu et dans quel ordre, jamais le contenu. */
+function brouillonDe(teamId){
+  if(!PARTIE.branchee) return null;
+  const j = PARTIE.joueurs.find(x => x.teamId === teamId);
+  if(!j) return null;
+  return (PARTIE.brouillons || []).find(b => b.userId === j.userId) || null;
+}
+
 function reponseHTML(teamId){
   if(!partieActive()) return "";
   const a = reponseDe(teamId);
-  if(!a) return '<div class="tanswer none">en attente…</div>';
-  if(!(S.play && S.play.phase === "revealed"))
-    return '<div class="tanswer sent"><b>'+a.order+'</b>a répondu</div>';
+  const revele = !!(S.play && S.play.phase === "revealed");
+  if(!a){
+    /* Rien de validé. À la révélation on montre quand même ce qui a été tapé :
+       faute de temps, une bonne réponse ne doit pas être perdue. */
+    const b = revele ? brouillonDe(teamId) : null;
+    if(b && (b.value || "").trim())
+      return '<div class="tanswer got brouillon" title="'+esc(b.value)+'">'+
+             esc(b.value)+'<small>non validée</small></div>';
+    return '<div class="tanswer none">en attente…</div>';
+  }
+  if(!revele) return '<div class="tanswer sent"><b>'+a.order+'</b>a répondu</div>';
   return '<div class="tanswer got" title="'+esc(a.value)+'">'+esc(a.value)+'</div>';
 }
 
@@ -3948,6 +4002,7 @@ function partieSync(){
       id:q.id, index:S.play.i+1, total:flat(S.quiz).length, round:it.round.title,
       text:q.text, type:q.type, multi:!!q.multi, buzzMode:!!q.buzzMode,
       mediaHold: !!(q.media && q.media.hidden),
+      mediaOffset: (q.media && q.media.start) || 0,
       questionHidden: !!(q.hideText),
       points:qPoints(q, it.round, S.quiz), timer:qTimer(q, S.quiz),
       blur: (q.media && q.media.blur) ? (flouEnvoye = S.play.blur || 0) : (flouEnvoye = 0),
@@ -4016,6 +4071,8 @@ const partieKick           = playerId => partiePost("/api/kick", {playerId: play
    salon garde « reponses closes ». */
 const partieMasqueReponse = ()=>{ PARTIE.derniereReveal = null;
                                   return partiePost("/api/unreveal", {}); };
+/* Le classement projete a toute la salle, sur demande. */
+const partieClassement = montre => partiePost("/api/classement", {show: !!montre});
 const partieBuzzReset      = ()=> partiePost("/api/buzzreset", {});
 const partieMontreQuestion = cachee => partiePost("/api/showquestion", {hidden: !!cachee});
 const partieChatEnvoie     = texte => partiePost("/api/chat", {text: texte});

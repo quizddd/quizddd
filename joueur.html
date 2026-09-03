@@ -141,6 +141,26 @@ input::placeholder{color:var(--text-3)}
   color:var(--text-2); font-size:.82rem;
 }
 .plein:hover{border-color:var(--gold); color:var(--gold)}
+.plein.on{border-color:var(--gold); color:var(--gold); background:var(--gold-dim)}
+
+/* Mode studio : l'image mange tout l'espace disponible, mais le chrono reste
+   en haut et la réponse sous la main. C'est le compromis entre « je regarde »
+   et « je réponds » — le plein écran, lui, ne fait que le premier. */
+.app.studio .chat-panel{display:none}
+.app.studio .rang,
+.app.studio .toutes,
+.app.studio .eyebrow,
+.app.studio .note{display:none}
+.app.studio main{max-width:none; padding:10px 12px 14px; gap:10px; justify-content:flex-start}
+.app.studio .media{flex:1; min-height:0; justify-content:center}
+.app.studio .media img,
+.app.studio .media video,
+.app.studio .media iframe{
+  max-height:100%; height:100%; width:auto; max-width:100%;
+  object-fit:contain; aspect-ratio:auto;
+}
+.app.studio .qtext{font-size:clamp(1rem,3.2vw,1.35rem); margin:0}
+.app.studio .zone-reponse, .app.studio .choices{flex:none}
 /* En plein écran, l'élément est seul : on le centre sur fond noir. */
 .media img:fullscreen, .media video:fullscreen{
   max-height:100%; max-width:100%; width:auto; height:auto;
@@ -291,6 +311,19 @@ input::placeholder{color:var(--text-3)}
   width:100%; padding:18px 16px; text-align:center; color:var(--text-2);
   background:var(--surface); border:1px dashed var(--line); border-radius:var(--r-l);
 }
+/* Classement montré à toute la salle : il prend l'écran, on ne fait que le
+   regarder. Le reste attend. */
+.podium{
+  position:fixed; inset:0; z-index:80; background:var(--bg);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:16px; padding:24px 16px;
+}
+.podium .t{
+  font-family:var(--f-display); font-size:1.5rem; font-weight:700;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--gold);
+}
+.podium .rang{max-width:520px}
+
 .oral b{
   display:block; margin-bottom:5px; color:var(--gold); font-family:var(--f-display);
   font-size:1.05rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
@@ -376,7 +409,7 @@ let ME = { code:"", playerId:"", name:"", avatar:"" };
 let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
 let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "", BANDEAU_VU = "";
 let AV_ENVOI = null;
-const VERSION = "03/09/2026 à 00:07";
+const VERSION = "04/09/2026 à 01:27";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
@@ -474,22 +507,24 @@ function avatarDe(nom){
 
 /* Les 36 figures d'abord, le pack de l'animateur ensuite : à l'entrée le pack
    est inconnu, on ne le propose donc qu'une fois dans la partie. */
+/* Les figures dessinées par le code ne sont proposées que si le salon n'a
+   aucune image : sinon elles noieraient les vraies au milieu de trente-six
+   visages génériques. */
 function grilleAvatars(courant, avecPack){
+  const pack = (avecPack && ETAT && ETAT.pack) || [];
+  if(pack.length){
+    return pack.map(p=>{
+      const id = "c:" + p.id, nom = p.name || "Image";
+      return '<button type="button" class="avcase'+(id === courant ? " on" : "")+'" '+
+        'data-av="'+esc(id)+'" title="'+esc(nom)+'" aria-label="'+esc(nom)+'">'+
+        avatarHTML(id, 46)+'</button>';
+    }).join("");
+  }
   let h = "";
   for(let i = 0; i < AV_N; i++){
     const id = "g:" + i;
     h += '<button type="button" class="avcase'+(id === courant ? " on" : "")+'" '+
          'data-av="'+id+'" aria-label="Figure '+(i+1)+'">'+avatarHTML(id, 46)+'</button>';
-  }
-  const pack = (avecPack && ETAT && ETAT.pack) || [];
-  if(pack.length){
-    h += '<div class="avsection">Images de l’animateur</div>'+
-      pack.map(p=>{
-        const id = "c:" + p.id, nom = p.name || "Image";
-        return '<button type="button" class="avcase'+(id === courant ? " on" : "")+'" '+
-          'data-av="'+esc(id)+'" title="'+esc(nom)+'" aria-label="'+esc(nom)+'">'+
-          avatarHTML(id, 46)+'</button>';
-      }).join("");
   }
   return h;
 }
@@ -510,9 +545,10 @@ function vueEntree(erreur){
   fermerAvatars();
   $("#chat").hidden = true;
   CHAT_VU = "";
-  /* Une figure est proposée d'office : personne n'entre sans visage, et les
-     identifiants du pack d'un salon précédent n'ont plus cours ici. */
-  if(!/^g:\d+$/.test(ME.avatar || "")) ME.avatar = "g:" + Math.floor(Math.random()*AV_N);
+  /* Les images appartiennent au salon : on ne peut pas les proposer avant
+     d'y être entré. Le serveur attribue donc une figure à l'arrivée, et le
+     joueur en change d'un clic sur son avatar. */
+  ME.avatar = "";
   MAIN.innerHTML =
     '<div class="centre">'+
       '<div class="gros">Rejoindre la partie</div>'+
@@ -522,16 +558,13 @@ function vueEntree(erreur){
       '<div class="field"><label for="nom">Ton pseudo</label>'+
         '<input type="text" id="nom" maxlength="24" autocomplete="nickname" '+
         'value="'+esc(ME.name)+'" placeholder="Comme tu veux"></div>'+
-      '<div class="field"><label>Ta figure</label>'+
-        '<div class="avgrille" id="avEntree" role="group" aria-label="Choix de la figure">'+
-          grilleAvatars(ME.avatar, false)+'</div>'+
-        '<p class="note">Les images de l’animateur se choisissent une fois entré.</p></div>'+
+
       '<button class="btn btn-gold btn-lg" id="go">Entrer</button>'+
       '<p class="err" id="err">'+esc(erreur||"")+'</p>'+
-      '<p class="note">Aucune inscription. Ton pseudo suffit, et il reste sur cet appareil.<br>'+
+      '<p class="note">Ta figure se choisit une fois entré, en touchant ton avatar en haut.<br>'+
+        'Aucune inscription : ton pseudo suffit, et il reste sur cet appareil.<br>'+
         '<span style="opacity:.55">Version du '+esc(VERSION)+'</span></p>'+
     '</div>';
-  brancherGrille($("#avEntree"), id => { ME.avatar = id; });
   const go = ()=> rejoindre($("#code").value, $("#nom").value);
   $("#go").onclick = go;
   $("#nom").onkeydown = e => { if(e.key==="Enter") go(); };
@@ -620,6 +653,7 @@ function signatureMedia(){
 /* Retirer un <audio> du DOM ne l'arrete pas : il continue de jouer dans le
    vide. Il faut le mettre en pause et lui enlever sa source a la main. */
 function couperMedia(){
+  sortStudio();
   const hote = $("#media");
   SIG_MEDIA = null;
   CMD_SEQ = 0;          /* nouveau média : les commandes de l'ancien ne valent plus */
@@ -643,6 +677,8 @@ function dessiner(){
                               (d.toutes||[]).length]);
   if(cle !== VU){ VU = cle; construire(); }
   majChrono();
+  majClassement();
+  majNoteLecture();
   majAvatars();
   majPanneauAvatars();
   appliqueFlou();
@@ -763,6 +799,23 @@ function zoneReponse(){
          (d.mine ? '<p class="etat ok">Réponse enregistrée : '+esc(d.mine)+'</p>' : '');
 }
 
+/* Ce qui est tapé part discrètement, pour que l'animateur puisse en tenir
+   compte quand le temps a manqué. Une frappe ne doit pas réveiller la salle :
+   on n'envoie qu'après une pause, et seulement si le texte a changé. */
+let brouillonMinuteur = null, brouillonVu = "";
+function noteBrouillon(texte){
+  const v = String(texte == null ? "" : texte);
+  if(v === brouillonVu) return;
+  clearTimeout(brouillonMinuteur);
+  brouillonMinuteur = setTimeout(()=>{
+    brouillonVu = v;
+    fetch("/api/draft?room="+encodeURIComponent(ME.code), {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({playerId: ME.playerId, value: v})
+    }).catch(()=>{ brouillonVu = ""; });
+  }, 600);
+}
+
 function brancherReponse(){
   const d = ETAT, q = d.question;
   document.querySelectorAll(".choice[data-l]").forEach(b=> b.onclick = ()=>{
@@ -779,6 +832,7 @@ function brancherReponse(){
   if(env){
     env.onclick = ()=> envoyer($("#rep").value);
     $("#rep").onkeydown = e => { if(e.key==="Enter") envoyer($("#rep").value); };
+    $("#rep").oninput = e => noteBrouillon(e.target.value);
   }
 }
 
@@ -840,6 +894,23 @@ function majAvatars(){
     el.dataset.avId = voulu;
     el.innerHTML = avatarHTML(voulu, Number(el.dataset.avT) || 30);
   });
+}
+
+/* L'animateur montre ou masque le classement : chez le joueur, ça se superpose
+   à tout le reste plutôt que de reconstruire l'écran, pour ne pas couper un
+   extrait en cours ni perdre une réponse en train d'être tapée. */
+function majClassement(){
+  const veut = !!(ETAT && ETAT.showScores);
+  let p = $("#podium");
+  if(!veut){ if(p) p.remove(); return; }
+  const contenu = '<div class="t">Classement</div>' + classement(true);
+  if(!p){
+    p = document.createElement("div");
+    p.className = "podium";
+    p.id = "podium";
+    document.body.appendChild(p);
+  }
+  if(p.dataset.vu !== contenu){ p.innerHTML = contenu; p.dataset.vu = contenu; }
 }
 
 function classement(seul){
@@ -923,11 +994,25 @@ function positionDepart(){
     CMD_SEQ = c.seq;
     return {pos: Math.max(0, c.pos + (c.playing ? t - c.at : 0)), joue: !!c.playing};
   }
-  return {pos: Math.max(0, t - d.mediaStart), joue: true};
+  /* « Démarrer à 30 s » est réglé dans la fiche : sans l'ajouter ici, les
+     joueurs repartiraient du début pendant que l'animateur, lui, est à 30 s. */
+  return {pos: Math.max(0, (d.mediaOffset || 0) + t - d.mediaStart), joue: true};
 }
 
 /* L'animateur a rembobiné, avancé, mis en pause ou relancé. On recale le
    lecteur en place sans le remonter, sinon le son repartirait de zéro. */
+/* La mention sous l'extrait doit dire ce qui se passe : « lecture en cours »
+   pendant que l'animateur a mis en pause, c'est trompeur. */
+function majNoteLecture(){
+  const n = $("#audNote") || $("#extNote");
+  if(!n) return;
+  const el = document.querySelector("#media audio, #media video");
+  if(!el) return;
+  const t = el.paused ? "En pause — l’animateur a arrêté l’extrait."
+                      : "Lecture en cours…";
+  if(n.textContent !== t) n.textContent = t;
+}
+
 function suivreMedia(){
   const c = ETAT && ETAT.mediaCmd;
   if(!c || !c.seq || c.seq === CMD_SEQ) return;
@@ -1012,6 +1097,38 @@ function pleinEcran(el){
   }catch(e){ agrandirSurPlace(el); }
 }
 
+/* Un seul interrupteur, et il dit ce qu'il fait : on entre en studio, on en
+   sort. Le reglage ne survit pas a la question suivante, sinon un joueur
+   oublierait qu'il y est et ne verrait plus le classement. */
+function basculeStudio(){
+  const app = document.querySelector(".app");
+  if(!app) return;
+  app.classList.toggle("studio");
+  const b = $("#studioBtn");
+  if(b){
+    const on = app.classList.contains("studio");
+    b.classList.toggle("on", on);
+    b.lastChild.textContent = on ? " Quitter le studio" : " Mode studio";
+  }
+}
+
+function sortStudio(){
+  const app = document.querySelector(".app");
+  if(app) app.classList.remove("studio");
+}
+
+function boutonStudio(hote){
+  if(!hote) return;
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "plein";
+  b.id = "studioBtn";
+  b.innerHTML = '<span aria-hidden="true">\u25a3</span>';
+  b.appendChild(document.createTextNode(" Mode studio"));
+  b.onclick = basculeStudio;
+  hote.appendChild(b);
+}
+
 function boutonPleinEcran(hote, el){
   if(!hote || !el) return;
   const b = document.createElement("button");
@@ -1063,6 +1180,7 @@ function monterMedia(){
     }
     if(genre === "image"){
       hote.innerHTML = '<img alt="Image de la question" src="'+esc(d.mediaUrl)+'">';
+      boutonStudio(hote);
       boutonPleinEcran(hote, hote.querySelector("img"));
       return;
     }
@@ -1076,7 +1194,7 @@ function monterMedia(){
       if(decalage > 0 && decalage < (el.duration||1e9)) el.currentTime = decalage;
       if(dep.joue) lancer(el, hote);
     };
-    if(balise === "video") boutonPleinEcran(hote, el);
+    if(balise === "video"){ boutonStudio(hote); boutonPleinEcran(hote, el); }
     el.onerror = ()=>{ const n = $("#extNote"); if(n) n.textContent = "Média indisponible depuis ce lien."; };
     return;
   }
@@ -1085,6 +1203,7 @@ function monterMedia(){
 
   if(m.kind === "image"){
     hote.innerHTML = '<img alt="Image de la question" src="'+src+'">';
+    boutonStudio(hote);
     boutonPleinEcran(hote, hote.querySelector("img"));
     return;
   }
@@ -1099,6 +1218,7 @@ function monterMedia(){
       if(decalage > 0 && decalage < (v.duration||1e9)) v.currentTime = decalage;
       if(dep.joue) lancer(v, hote);
     };
+    boutonStudio(hote);
     boutonPleinEcran(hote, v);
     v.onended = ()=>{ hote.innerHTML = '<div class="done">Extrait terminé</div>'; };
     return;
