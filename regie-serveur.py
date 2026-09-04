@@ -1116,15 +1116,50 @@ async def h_avatarimg(request):
     return web.Response(status=404, text="avatar inconnu")
 
 
+def sert_octets(request, data, type_mime, cache):
+    """Sert des octets en honorant l'en-tete Range.
+
+    Sans ca, un navigateur ne peut pas se deplacer dans un son ou une video :
+    demander la lecture a 15 s echoue et le lecteur repart du debut. C'est
+    indispensable des qu'on veut demarrer un extrait ailleurs qu'au debut.
+    """
+    total = len(data)
+    entetes = {"Cache-Control": cache, "Accept-Ranges": "bytes"}
+    plage = (request.headers.get("Range") or "").strip()
+
+    if plage.startswith("bytes=") and total:
+        morceau = plage[6:].split(",")[0].strip()
+        debut_txt, _, fin_txt = morceau.partition("-")
+        try:
+            if debut_txt:
+                debut = int(debut_txt)
+                fin = int(fin_txt) if fin_txt else total - 1
+            else:
+                # « bytes=-500 » : les 500 derniers octets.
+                debut = max(0, total - int(fin_txt))
+                fin = total - 1
+        except ValueError:
+            debut, fin = 0, total - 1
+        fin = min(fin, total - 1)
+        if debut > fin or debut >= total:
+            entetes["Content-Range"] = "bytes */%d" % total
+            return web.Response(status=416, headers=entetes)
+        entetes["Content-Range"] = "bytes %d-%d/%d" % (debut, fin, total)
+        return web.Response(status=206, body=data[debut:fin + 1],
+                            content_type=type_mime, headers=entetes)
+
+    return web.Response(body=data, content_type=type_mime, headers=entetes)
+
+
 async def h_media(request):
     s = salon_de(request)
     if s is None or s.media is None:
         return web.Response(status=404, text="pas de media")
     if request.query.get("id") and request.query["id"] != s.media["id"]:
         return web.Response(status=404, text="media remplace")
-    return web.Response(body=s.media["data"],
-                        content_type=(s.media["type"] or "application/octet-stream"),
-                        headers={"Cache-Control": "public, max-age=3600"})
+    return sert_octets(request, s.media["data"],
+                       s.media["type"] or "application/octet-stream",
+                       "public, max-age=3600")
 
 
 # ------------------------------------------------------------------ pages

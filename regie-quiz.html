@@ -668,6 +668,48 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
    ============================================================ */
 /* La scène ne connaît pas la discussion : c'est la présence du panneau qui
    fait passer la vue en deux colonnes, sinon rien ne bouge. */
+/* Correction : les reponses en entier, a gauche, pendant que l'animateur
+   tranche. La scene se retrecit, c'est le texte qui compte a ce moment-la. */
+.corrige{
+  flex:none; width:340px; display:flex; flex-direction:column;
+  margin:12px 0 12px 12px; padding:12px; gap:8px;
+  background:var(--surface); border:1px solid var(--line-soft);
+  border-radius:var(--r-l); box-shadow:var(--shadow-1); overflow:hidden;
+}
+.corrige .hd{
+  flex:none; display:flex; align-items:center; justify-content:space-between;
+  gap:8px; font-family:var(--f-display); font-size:.82rem; font-weight:600;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--text-3);
+}
+.corrige .liste{
+  flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+  display:flex; flex-direction:column; gap:8px;
+}
+.cline{
+  display:flex; flex-direction:column; gap:6px; padding:9px 10px;
+  border-radius:var(--r-m); background:var(--surface-2);
+  border:1px solid var(--line-soft); border-left:3px solid var(--tc, var(--line));
+}
+.cline.juste{border-left-color:var(--mint)}
+.cline.faux{border-left-color:var(--rose)}
+.cline .qui{display:flex; align-items:center; gap:8px; min-width:0}
+.cline .nm{
+  flex:1; min-width:0; font-weight:600; font-size:.9rem;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.cline .txt{font-size:1rem; line-height:1.35; overflow-wrap:anywhere; color:var(--text)}
+.cline .txt.vide{color:var(--text-3); font-style:italic}
+.cline .txt small{
+  display:block; margin-top:2px; font-size:.66rem; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--text-3);
+}
+.cline .actes{display:flex; gap:5px}
+.cline .actes button{
+  flex:1; padding:5px 0; border-radius:var(--r-s); cursor:pointer;
+  background:var(--surface-3); border:1px solid var(--line-soft); color:var(--text-2);
+}
+.cline .actes button.on{background:var(--gold); border-color:var(--gold); color:#1a1408}
+
 .play:has(> .chat-panel){
   display:grid;
   grid-template-columns:minmax(0,1fr) auto;
@@ -680,6 +722,28 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
    devient la rangée plutôt que d'empiler et d'écraser la scène. */
 .play > div:has(> .stage-wrap):has(> .chat-panel){flex:1; min-height:0; display:flex; gap:12px}
 .play > div:has(> .stage-wrap):has(> .chat-panel) > .stage-wrap{flex:1; min-width:0}
+
+/* Posé après les règles de la discussion, sinon celles-ci replacent la scène
+   en première colonne et les deux panneaux se superposent. */
+.play:has(> .corrige){
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  grid-template-rows:minmax(0,1fr) auto;
+}
+.play:has(> .corrige) > .corrige{grid-row:1; grid-column:1}
+.play:has(> .corrige) > .stage-wrap{grid-row:1; grid-column:2}
+.play:has(> .corrige) > .console{grid-row:2; grid-column:1/-1}
+.play:has(> .corrige):has(> .chat-panel){grid-template-columns:auto minmax(0,1fr) auto}
+.play:has(> .corrige):has(> .chat-panel) > .corrige{grid-row:1; grid-column:1}
+.play:has(> .corrige):has(> .chat-panel) > .stage-wrap{grid-row:1; grid-column:2}
+.play:has(> .corrige):has(> .chat-panel) > .chat-panel{grid-row:1; grid-column:3}
+.play:has(> .corrige):has(> .chat-panel) > .console{grid-row:2; grid-column:1/-1}
+@media (max-width:1100px){
+  .corrige{width:auto; max-height:38vh; margin:12px 12px 0}
+  .play:has(> .corrige), .play:has(> .corrige):has(> .chat-panel){
+    display:flex; flex-direction:column;
+  }
+}
 
 .chat-panel{
   width:300px; flex:none; min-height:0; overflow:hidden;
@@ -988,7 +1052,7 @@ const shortLabel = qq => (qq.text||"").trim().replace(/\s+/g," ").slice(0,60);
 const S = { view:"library", list:[], quiz:null, selQ:null, play:null };
 /* Remplace a la construction. Sert a verifier d'un coup d'oeil qu'un onglet
    ouvert de longue date n'est pas reste sur une ancienne version. */
-const VERSION = "04/09/2026 à 01:27";
+const VERSION = "04/09/2026 à 02:05";
 const MAIN = $("#main"), MARQ = $("#marquee");
 
 const VIEWS = [
@@ -1889,6 +1953,8 @@ function viewPlay(){
   SCENE_SIG = sceneAvant;
   MAIN.innerHTML =
   '<div class="play">'+
+    (p.phase === "revealed" && typeof partieActive === "function" && partieActive()
+      ? '<aside class="corrige" id="corrige"></aside>' : "")+
     '<div class="stage-wrap">'+
       '<div class="timerbar'+(tim>0?"":" off")+'" id="tbar"><span id="tfill"></span></div>'+
       '<div class="stage-hd">'+
@@ -1953,6 +2019,7 @@ function viewPlay(){
   renderRail2();
   renderBuzzBanner();
   renderChat();
+  renderCorrige();
   noteReprise();
   syncTimer();
 
@@ -2081,6 +2148,62 @@ function renderBuzzBanner(){
       (j && j.avatar ? avatarHTML(j.avatar, 40) : "")+
       '<span><strong>'+esc(gagnant.name)+'</strong> a buzzé et prend la main</span>';
   }
+}
+
+/* Au moment de trancher, l'animateur doit lire les réponses en entier : les
+   cartes du bas les tronquent. Ce panneau les donne telles quelles, avec de
+   quoi corriger sans changer de fenêtre. */
+function renderCorrige(){
+  const boite = $("#corrige");
+  if(!boite || !S.play) return;
+  const quiz = S.quiz, it = curItem();
+  if(!it) return;
+  const pts = qPoints(it.q, it.round, quiz);
+  const half = Math.round(pts/2*2)/2;
+  const lignes = quiz.teams.map(t=>{
+    const rep = (typeof reponseDe === "function") ? reponseDe(t.id) : null;
+    const bro = (!rep && typeof brouillonDe === "function") ? brouillonDe(t.id) : null;
+    if(!rep && !(bro && (bro.value||"").trim())) return null;
+    const aw = awardOf(quiz, t.id, it.q.id);
+    const k = aw ? aw.verdict : null;
+    const j = (typeof PARTIE !== "undefined" && PARTIE.joueurs)
+              ? PARTIE.joueurs.find(x=>x.teamId === t.id) : null;
+    const texte = rep ? rep.value : bro.value;
+    return '<div class="cline'+(k==="full"?" juste":k==="zero"?" faux":"")+'" '+
+             'style="--tc:'+esc(t.color)+'" data-t="'+t.id+'">'+
+      '<div class="qui">'+
+        (j && j.avatar ? avatarHTML(j.avatar, 24) : "")+
+        '<span class="nm">'+esc(t.name)+'</span>'+
+        (rep ? '<span class="pill">'+rep.order+'</span>' : "")+
+      '</div>'+
+      '<div class="txt'+(texte ? "" : " vide")+'">'+esc(texte || "rien")+
+        (rep ? "" : '<small>non validée</small>')+'</div>'+
+      '<div class="actes">'+
+        '<button data-c="'+t.id+'" data-k="zero"'+(k==="zero"?' class="on"':'')+'>✕</button>'+
+        '<button data-c="'+t.id+'" data-k="half"'+(k==="half"?' class="on"':'')+'>½</button>'+
+        '<button data-c="'+t.id+'" data-k="full"'+(k==="full"?' class="on"':'')+'>✓</button>'+
+      '</div>'+
+    '</div>';
+  }).filter(Boolean);
+
+  boite.innerHTML =
+    '<div class="hd"><span>Réponses</span><span>'+lignes.length+'</span></div>'+
+    '<div class="liste">'+ (lignes.length ? lignes.join("")
+      : '<p class="hint">Personne n\'a répondu.</p>') +'</div>';
+
+  boite.querySelectorAll("[data-c]").forEach(b=> b.onclick = ()=>{
+    const tid = b.dataset.c, kind = b.dataset.k;
+    const aw = awardOf(quiz, tid, it.q.id);
+    if(aw && aw.verdict === kind){ setAward(tid, it.q.id, null); }
+    else {
+      const d = kind==="zero" ? 0 : kind==="half" ? half : pts;
+      const rep = (typeof reponseDe === "function") ? reponseDe(tid) : null;
+      setAward(tid, it.q.id, d, "Q"+(S.play.i+1)+" — "+
+        ({zero:"faux",half:"moitié",full:"juste"}[kind]), kind, rep ? rep.order : 0);
+    }
+    if(typeof applySpeedBonus === "function") applySpeedBonus(it.q.id);
+    renderCorrige(); renderRail2();
+  });
 }
 
 /* Le fil de discussion. Il est redessiné à chaque rafraîchissement, donc il ne
@@ -3966,6 +4089,7 @@ function partieRafraichit(){
     if($("#rail2")) renderRail2();
     if(typeof renderBuzzBanner === "function") renderBuzzBanner();
     if(typeof renderChat === "function") renderChat();
+    if(typeof renderCorrige === "function") renderCorrige();
     const aBouton = !!$("#tPass");
     if(aBouton !== !!(PARTIE.buzzMode && PARTIE.buzzGagnant)) viewPlay();
   }

@@ -409,7 +409,7 @@ let ME = { code:"", playerId:"", name:"", avatar:"" };
 let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
 let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "", BANDEAU_VU = "";
 let AV_ENVOI = null;
-const VERSION = "04/09/2026 à 01:27";
+const VERSION = "04/09/2026 à 02:05";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
@@ -683,6 +683,7 @@ function dessiner(){
   majPanneauAvatars();
   appliqueFlou();
   suivreMedia();
+  recaleSiDerive();
   suivreBuzz();
   majChat();
 }
@@ -1012,6 +1013,32 @@ function majNoteLecture(){
                       : "Lecture en cours…";
   if(n.textContent !== t) n.textContent = t;
 }
+
+/* Ou devrait en etre la lecture, a cet instant precis. */
+function positionAttendue(){
+  const d = ETAT, c = d && d.mediaCmd, t = (Date.now()+DERIVE)/1000;
+  if(!d || !d.mediaStart) return null;
+  if(c && c.seq) return {pos: Math.max(0, c.pos + (c.playing ? t - c.at : 0)), joue: !!c.playing};
+  return {pos: Math.max(0, (d.mediaOffset || 0) + t - d.mediaStart), joue: true};
+}
+
+/* Un saut demande juste apres le montage peut ne pas prendre : les metadonnees
+   ne sont pas encore la, et le lecteur repart du debut. Surveiller l'ecart en
+   continu rattrape ce cas, et toute derive accumulee. */
+function recaleSiDerive(){
+  const a = positionAttendue();
+  if(!a || !a.joue) return;
+  const el = document.querySelector("#media audio, #media video");
+  if(!el || el.paused || !el.duration) return;
+  if(a.pos >= el.duration) return;
+  if(Math.abs(el.currentTime - a.pos) <= 1.5) return;
+  try{ el.currentTime = a.pos; }catch(e){}
+}
+
+/* Deux secondes : assez rare pour ne rien hacher, assez frequent pour qu'un
+   demarrage rate ne s'entende pas. L'attente longue du serveur, elle, peut
+   rester muette vingt secondes. */
+setInterval(recaleSiDerive, 2000);
 
 function suivreMedia(){
   const c = ETAT && ETAT.mediaCmd;
