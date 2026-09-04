@@ -82,6 +82,11 @@ def avatar_valide(salon, valeur, nom):
     connu retombe sur celui du pseudo, sinon n'importe quoi finirait a
     l'ecran de tout le monde."""
     v = str(valeur or "").strip()[:64]
+    # Des que le salon a des images, une figure dessinee n'a plus cours : un
+    # navigateur ouvert avant le changement en renvoie encore, et elle
+    # reapparaissait chez ce joueur-la seulement.
+    if v.startswith("g:") and salon.tout_le_pack():
+        return avatar_defaut(nom)
     if v.startswith("g:"):
         try:
             n = int(v[2:])
@@ -935,6 +940,17 @@ async def h_state(request):
 
 
 # ------------------------------------------------------------------ joueurs
+async def h_pack(request):
+    """Les images d'un salon, avant d'y etre entre : sans ca le joueur ne peut
+    pas choisir sa figure en meme temps que son pseudo. On ne rend que des
+    identifiants et des noms, rien de sensible."""
+    s = salon_de(request)
+    if s is None:
+        return rep({"ok": False, "pack": []}, status=404)
+    return rep({"ok": True,
+                "pack": [{"id": a["id"], "name": a["name"]} for a in s.tout_le_pack()]})
+
+
 async def h_join(request):
     s = salon_de(request)
     if s is None:
@@ -1214,6 +1230,7 @@ def build_app():
     r.add_post("/api/avatarpack", h_avatarpack)
     r.add_post("/api/avatarpackdel", h_avatarpackdel)
 
+    r.add_get("/api/pack", h_pack)
     r.add_post("/api/join", h_join)
     r.add_get("/api/play", h_play)
     r.add_post("/api/answer", h_answer)
