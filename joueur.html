@@ -24,6 +24,52 @@
   --f-mono:"DM Mono",ui-monospace,Consolas,monospace;
   color-scheme:dark;
 }
+/* Themes drapeau : fond sombre, mais les trois couleurs bien presentes, et un
+   lisere sous la barre du haut qui donne son identite au theme. */
+:root[data-theme="belge"]{
+  --bg:#12100B; --bg-2:#1A1710; --surface:#221E15; --surface-2:#2C2719; --surface-3:#38311F;
+  --line:#4A4029; --line-soft:#2F2A1C;
+  --text:#FBF6E7; --text-2:#D8CFB4; --text-3:#9C9174;
+  --gold:#FDDA24; --gold-ink:#2A2200; --gold-dim:rgba(253,218,36,.18);
+  --rose:#EF3340; --rose-dim:rgba(239,51,64,.18);
+  --mint:#E8C547; --mint-ink:#241C00; --mint-dim:rgba(232,197,71,.16);
+  --drapeau:linear-gradient(90deg,#1A1A1A 0 33.33%,#FDDA24 33.33% 66.66%,#EF3340 66.66%);
+}
+:root[data-theme="francais"]{
+  --bg:#0B0F1C; --bg-2:#111726; --surface:#182034; --surface-2:#212B43; --surface-3:#2B3754;
+  --line:#3A4869; --line-soft:#232D46;
+  --text:#F4F7FF; --text-2:#C4CDE4; --text-3:#8791AC;
+  --gold:#4E7BE8; --gold-ink:#04122F; --gold-dim:rgba(78,123,232,.20);
+  --rose:#E4374A; --rose-dim:rgba(228,55,74,.18);
+  --mint:#EDF1F8; --mint-ink:#0B1424; --mint-dim:rgba(237,241,248,.14);
+  --drapeau:linear-gradient(90deg,#2743A6 0 33.33%,#F4F6FA 33.33% 66.66%,#E4374A 66.66%);
+}
+:root[data-theme="belge"] .bar, :root[data-theme="francais"] .bar{position:relative}
+:root[data-theme="belge"] .bar::after, :root[data-theme="francais"] .bar::after{
+  content:""; position:absolute; left:0; right:0; bottom:-1px; height:3px;
+  background:var(--drapeau); pointer-events:none;
+}
+
+/* Le choix des themes, ouvert depuis la barre. */
+.themebox{
+  position:absolute; top:calc(100% + 6px); right:0; z-index:70; min-width:170px;
+  padding:6px; display:flex; flex-direction:column; gap:2px;
+  background:var(--surface); border:1px solid var(--line);
+  border-radius:var(--r-l); box-shadow:0 12px 32px rgba(0,0,0,.5);
+}
+.themebox button{
+  display:flex; align-items:center; gap:10px; padding:9px 10px; cursor:pointer;
+  background:none; border:0; border-radius:var(--r-m); color:var(--text-2);
+  font-size:.95rem; text-align:left; width:100%;
+}
+.themebox button.on{background:var(--gold-dim); color:var(--gold); font-weight:600}
+.themebox i{flex:none; width:22px; height:14px; border-radius:3px;
+  border:1px solid rgba(255,255,255,.18)}
+.themebtn{
+  flex:none; width:32px; height:32px; border-radius:50%; cursor:pointer;
+  background:var(--surface-2); border:1px solid var(--line-soft); color:var(--text-2);
+}
+
 *{box-sizing:border-box}
 [hidden]{display:none !important}
 html,body{height:100%}
@@ -41,14 +87,14 @@ button,input{font:inherit; color:inherit}
    qui reste même en ayant fait défiler la page. */
 .top{position:sticky; top:0; z-index:10; flex:none}
 .bar{
-  display:flex; align-items:center; gap:10px; padding:9px 14px;
+  display:flex; align-items:center; gap:11px; padding:13px 15px;
   background:var(--bg-2); border-bottom:1px solid var(--line-soft);
 }
 .mark{
-  width:24px; height:24px; flex:none;
+  width:30px; height:30px; flex:none;
   background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAABgFBMVEXWllfiqx9ZKSBeZSTjTUaokS/cXiAPISFONJq3TSiaKCLlyKBoX1ELb3chGkARn6iudEvDvbHCPkC6uKzqHjNaiSAZ0NwBAgMPEx3IqoPwijfrLDMQFSH6kzrRs4v++eovKiMsGBH9wxTleTDWdjDzNDWyl3TPaCjz6dqyZyv5vRJNKBXDpH4tIxUnDA5pOBnYJCzRHSZuRSVQGBRqGBawGiJSNxpzZlP7QjCLJROvWCWSVSfmyqOuKig2NDNtSNbOVSVMCxBOOyv+0ygWyNOagmRbWFG0pYrk3dCLemM6VhfUxrGQeVz8PED4xyuwSx3/1BR6eHK0Mi+9oXt1Qx3SNzZ4JSejimqtiBGbmI96KBiOGBlHMY6UdBB3VDIVu8azraSVKyh0TeaoKxG1bEymnI6S2y6HyivJTiBISEfEeFTagzXUphLc08aLeTUzTRaSa0iSYTGFZhM5MhuLTCmUSh44Jm+HNRtrVQ4HVVyMHSMLiJEUs716timRjocY2+dszZNIAAAAgHRSTlP//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////xUHpOoAAAWkSURBVHja7ZdXe9pKEIZxSe+nzarComZFgDDVNBvj3kscx7FjO07vvde/fmZXAiMkJznPuc1cICH2e3d2yi6Kwf+02G9AEECITOS2ETTvht13PyJHAAgf8CvWjYh1Tf8fTA4DQtP/GCn3AvzHnaUSoPlfInQD/KXxWAAYjR8AmCAA8JmJ6bW1h3w5sGl8gsOghfQ4KASAxMxQHG0hgQTISh0PwjmCRqPtQgcgwyjKh9DiswRIRpKuci77MZ3mTncQQI1sEMDnH4pzB/DzG5C8JBmbgGMSz/qWl5f7mgf9h2mBdUnK+Gs4BNxF5eza9AJengIgQDLyAM8mJpLJy0lRMpaueghc3oERBgBhCxgF5kh8KOEBGiQ2gWq0EfZ1ad0L/uklKQTACODMN0GWYSHOgpDJskHHJrg8qUg4JyIwLND/B9NngYQA8fglpCY4iMBpyRgf8PXJ4x5AMtY3Bwf5bbE3iEBmZ7+NIuA6Ah7idVwqvl7m+svJPskHSEuD/k0hIguEFQdbyQzLGBTHjyV9gNbWd2w4EwIwuew5gI4wAjrAzQth0ApAQgDeRHApjknk+wpmkE2PgL7g/IaULUIEwGuHmxjLhOdB35PdVwOvXu32Hf/LV2Y9+TBfwBGAs/Gna3xng9fHNmwdza7lNotZD4AXlBd9QQQAkzHdbg1SUtr2+GX/pyybvIjy4UJ7fBSA9cz1Px/yhrYVRfQMGbZTZNkvDu9koLupQ4BOFAAcV1e4GE1UxFwB3S/ujAP5IQB7Aht6GgG05lJbER/bNde1GamVKfIFHAVoR+YubyYZSopYdUXxjeO4rmMjoEbIznA2fxQA0iXvStauJ1hT5ezSxoquWCsW+m8hIIf7SsHPoL9vBgBbq7ud8mCXlyiriopm5Uo5nUWyRh0K7RCECgnSWHJP0uAfXjggJoqaxvKgiboPoCV9z1/o+VA3flhlhfuhk2MMAUqZEC+Mo+Qo1TWR8k57d+t8aEcq7T5Jrq5uEX+LzykKE/JEetXg0JxlaZQJT46N3ejdE5lD6Q9bq1sdgPi2KmqWtwzE6IQ+tkSbbbQ3xtBOhLqRM2jaX2ROeUup61LH9StS26hhMkoIuHFrbOzkO+jNQqAaCPQraUoRiFb1ABoGw+b6k++Y+z1BzNBM9zELJZHS3MW9VslxHJ0nQxdjCvrHasQ7ZYKAxohhXG00DvxSBSraNZp7+eLFnsMqmnmg2w6f2N98IgAjaJW2C7qiA2QyuATWCoqoa1U85DqncqgODkaMEWO9wL3j53xNEel288GDFZsnQdO1t0DLCYDnA/Pz889Jbwy2R9YLPApeLU8nsJLs5oNmk6cRHdCt93T87CICvt67d//efG8hAfXq6dy+TMvmgkpdr4z9LUVDgJsvTE2x4fNf798/AaF2ZmfVxy/fz5GFM/V6ufAeg2Dpvp45UM3vvLiyWOYJH/g7fC7g9xMXJicvgFkXBHW6krf9bmCeoN5yKndmri2qajkyiAxwbnJyf1LOqSkEzBUqWMysBhW+AEtzUW8uCoJQF1qRuzKQ/cn9fz5SFccIKaF1O6/74eMd4VYezZhzKfabWp+LOlhkkL98/wwmB5jCXKXi8ApGsa6h/48Ec+qK4Fn9bsQSgLTkz1DmesE01Te38ytNy7LQe62ar8TUQ72QOjMT7AXu0Fx9j55V/SGmYJ7edo9XLaupYf5Oof5aShAOCSb0/M2Dgbqgqm09c+Hibad6asWy3uQrgwLqhW5LtZPRBgAcin0X1Op4TdRsp4DTI5CHtstUEvyzXa6nglOYQmrbUTYy7x8JaipCPxX8r5wOzs+Gp1QTN/I7KTZ9SugFCOkegBAi4CzXyuyx6UU/6ECr932BmlGEiGf8udCKeOUpq0eND2Gn0pEvXemyyTL5ExPMxdGjX/tIOvEzo79ffXvtX6aN7mTJg4pyAAAAAElFTkSuQmCC) center/contain no-repeat;
 }
-.brand{font-family:var(--f-display); font-size:1.1rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase}
+.brand{font-family:var(--f-display); font-size:1.22rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase}
 .brand em{font-style:normal; color:var(--gold)}
 .bar .who{margin-left:auto; display:flex; align-items:center; gap:8px; font-size:.85rem; color:var(--text-3)}
 .bar .who b{color:var(--text); font-weight:600}
@@ -386,6 +432,10 @@ input::placeholder{color:var(--text-3)}
       <span class="brand">Quiz<em>DDD</em></span>
       <span class="chrono" id="chrono" hidden role="timer" aria-live="off"></span>
       <span class="who" id="who"></span>
+      <span style="position:relative;display:inline-flex;flex:none">
+        <button class="themebtn" id="themeBtn" type="button" title="Choisir le thème"
+                aria-label="Choisir le thème" aria-haspopup="true" aria-expanded="false">◐</button>
+        <div class="themebox" id="themeBox" hidden></div></span>
     </header>
     <div class="timer" id="timer" hidden><i id="timerFill"></i></div>
   </div>
@@ -423,6 +473,45 @@ input::placeholder{color:var(--text-3)}
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
+
+/* Themes : la page joueur n'a qu'une palette sombre, on ne lui invente pas de
+   theme clair jamais eprouve. Les deux drapeaux, eux, sont sombres. */
+const THEME_CLE = "regie-quiz:theme";
+const THEMES = [
+  {id:"",         nom:"Sombre",   ton:"#14172E"},
+  {id:"belge",    nom:"Belge",    ton:"linear-gradient(90deg,#1A1A1A 0 33%,#FDDA24 33% 66%,#EF3340 66%)"},
+  {id:"francais", nom:"Français", ton:"linear-gradient(90deg,#2743A6 0 33%,#F4F6FA 33% 66%,#E4374A 66%)"},
+];
+function poseTheme(t){
+  if(t === "belge" || t === "francais") document.documentElement.setAttribute("data-theme", t);
+  else document.documentElement.removeAttribute("data-theme");
+}
+function fermeThemes(){
+  const b = document.querySelector("#themeBox");
+  if(b) b.hidden = true;
+  const t = document.querySelector("#themeBtn");
+  if(t) t.setAttribute("aria-expanded", "false");
+}
+function ouvreThemes(){
+  const b = document.querySelector("#themeBox"), bouton = document.querySelector("#themeBtn");
+  if(!b) return;
+  if(!b.hidden) return fermeThemes();
+  let cur = "";
+  try{ cur = localStorage.getItem(THEME_CLE) || ""; }catch(e){}
+  if(cur !== "belge" && cur !== "francais") cur = "";
+  b.innerHTML = THEMES.map(t =>
+    '<button type="button" data-t="'+t.id+'"'+(t.id === cur ? ' class="on"' : '')+'>'+
+      '<i style="background:'+t.ton+'"></i><span>'+t.nom+'</span></button>').join("");
+  b.querySelectorAll("[data-t]").forEach(x => x.onclick = ()=>{
+    const id = x.dataset.t;
+    try{ if(id) localStorage.setItem(THEME_CLE, id); else localStorage.removeItem(THEME_CLE); }catch(e){}
+    poseTheme(id);
+    fermeThemes();
+  });
+  b.hidden = false;
+  if(bouton) bouton.setAttribute("aria-expanded", "true");
+}
+try{ poseTheme(localStorage.getItem(THEME_CLE)); }catch(e){}
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const MAIN = $("#main");
 const CLE = "regie-quiz:joueur";
@@ -436,7 +525,7 @@ let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
 let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "", BANDEAU_VU = "";
 let PACK_ENTREE = [];
 let AV_ENVOI = null;
-const VERSION = "04/09/2026 à 02:27";
+const VERSION = "04/09/2026 à 02:38";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
@@ -595,7 +684,8 @@ function vueEntree(erreur){
 
       '<button class="btn btn-gold btn-lg" id="go">Entrer</button>'+
       '<p class="err" id="err">'+esc(erreur||"")+'</p>'+
-      '<p class="note">Ta figure se choisit une fois entré, en touchant ton avatar en haut.<br>'+
+      '<p class="note">Tape le code pour choisir ta figure. Tu pourras en changer ensuite, '+
+        'et changer de pseudo, en touchant ton avatar en haut à droite.<br>'+
         'Aucune inscription : ton pseudo suffit, et il reste sur cet appareil.<br>'+
         '<span style="opacity:.55">Version du '+esc(VERSION)+'</span></p>'+
     '</div>';
@@ -1515,6 +1605,10 @@ async function choisirAvatar(id){
 }
 
 $("#avFermer").onclick = fermerAvatars;
+$("#themeBtn").onclick = e => { e.stopPropagation(); ouvreThemes(); };
+document.addEventListener("click", e => {
+  if(!e.target.closest("#themeBox") && !e.target.closest("#themeBtn")) fermeThemes();
+});
 $("#avNomOk").onclick = changePseudo;
 $("#avPseudo").onkeydown = e => { if(e.key === "Enter") changePseudo(); };
 /* Le fond, la touche Échap : deux façons de renoncer sans rien changer. */
