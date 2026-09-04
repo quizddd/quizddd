@@ -316,6 +316,13 @@ input[type=color]{width:40px; height:36px; padding:2px; border-radius:var(--r-s)
   content:""; position:absolute; left:0; right:0; bottom:-1px; height:3px;
   background:var(--drapeau); pointer-events:none;
 }
+/* Le drapeau belge est noir, jaune ET rouge : sans ce rappel, le theme vire au
+   jaune sur noir et la troisieme couleur disparait. */
+:root[data-theme="belge"] .brand-name em{color:#EF3340}
+:root[data-theme="belge"] .appbar{border-bottom-color:rgba(239,51,64,.35)}
+:root[data-theme="belge"] .tab.on::before{background:#EF3340}
+:root[data-theme="belge"] .dpill{border-color:rgba(239,51,64,.4)}
+
 :root[data-theme="belge"] .appbar, :root[data-theme="francais"] .appbar{position:relative}
 
 /* Le bouton ouvrait une roue aveugle : on ne savait pas ce qui venait ensuite.
@@ -1136,7 +1143,7 @@ const shortLabel = qq => (qq.text||"").trim().replace(/\s+/g," ").slice(0,60);
 const S = { view:"library", list:[], quiz:null, selQ:null, play:null };
 /* Remplace a la construction. Sert a verifier d'un coup d'oeil qu'un onglet
    ouvert de longue date n'est pas reste sur une ancienne version. */
-const VERSION = "04/09/2026 à 02:38";
+const VERSION = "04/09/2026 à 02:45";
 const MAIN = $("#main"), MARQ = $("#marquee");
 
 const VIEWS = [

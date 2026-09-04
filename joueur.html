@@ -44,6 +44,16 @@
   --mint:#EDF1F8; --mint-ink:#0B1424; --mint-dim:rgba(237,241,248,.14);
   --drapeau:linear-gradient(90deg,#2743A6 0 33.33%,#F4F6FA 33.33% 66.66%,#E4374A 66.66%);
 }
+/* Le drapeau belge est noir, jaune ET rouge : sans ce rappel, le thème vire au
+   jaune sur noir et la troisième couleur disparaît. */
+:root[data-theme="belge"] .brand em{color:#EF3340}
+:root[data-theme="belge"] .pastille{
+  background:rgba(239,51,64,.16); border-color:rgba(239,51,64,.45); color:#FF8189;
+}
+:root[data-theme="belge"] .bar{border-bottom-color:rgba(239,51,64,.35)}
+:root[data-theme="belge"] .rang .l.moi{border-color:#EF3340; background:rgba(239,51,64,.12)}
+:root[data-theme="belge"] .timer{background:rgba(239,51,64,.20)}
+
 :root[data-theme="belge"] .bar, :root[data-theme="francais"] .bar{position:relative}
 :root[data-theme="belge"] .bar::after, :root[data-theme="francais"] .bar::after{
   content:""; position:absolute; left:0; right:0; bottom:-1px; height:3px;
@@ -116,8 +126,12 @@ main{flex:1; min-height:0; display:flex; flex-direction:column; align-items:cent
   text-transform:uppercase; color:var(--text-3); text-align:center;
 }
 .qtext{font-size:clamp(1.25rem,4.5vw,1.8rem); font-weight:600; text-align:center}
+/* Le code et le pseudo suivent la marque ; le chrono garde le centre, l'avatar
+   et le thème sont a droite. */
+.ident{display:flex; align-items:center; gap:9px; min-width:0}
+.ident b{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:14ch}
 .chrono{
-  margin-left:auto; font-family:var(--f-mono); font-size:1.45rem; font-weight:500;
+  margin:0 auto; font-family:var(--f-mono); font-size:1.45rem; font-weight:500;
   font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1;
   padding:2px 4px; color:var(--text);
 }
@@ -430,6 +444,7 @@ input::placeholder{color:var(--text-3)}
     <header class="bar">
       <span class="mark" aria-hidden="true"></span>
       <span class="brand">Quiz<em>DDD</em></span>
+      <span class="ident" id="ident"></span>
       <span class="chrono" id="chrono" hidden role="timer" aria-live="off"></span>
       <span class="who" id="who"></span>
       <span style="position:relative;display:inline-flex;flex:none">
@@ -525,7 +540,7 @@ let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
 let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "", BANDEAU_VU = "";
 let PACK_ENTREE = [];
 let AV_ENVOI = null;
-const VERSION = "04/09/2026 à 02:38";
+const VERSION = "04/09/2026 à 02:45";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
@@ -779,15 +794,21 @@ async function boucle(){
 /* Le bandeau se repeint à chaque tour de boucle : sans ce garde-fou, le
    bouton de la figure serait remplacé sous le doigt du joueur. */
 function majBandeau(coupe){
-  const h = ME.name
-    ? (ME.playerId ? '<button class="avbtn" id="avBtn" type="button" '+
-        'title="Changer de pseudo ou de figure" aria-label="Changer de pseudo ou de figure">'+
-        avatarHTML(ME.avatar, 30)+'</button>' : '')+
-      '<span class="pastille">'+esc(ME.code)+'</span><b>'+esc(ME.name)+'</b>'+
+  /* Deux moitiés : l'identité colle à la marque, l'avatar reste à droite avec
+     le bouton de thème. */
+  const gauche = ME.name
+    ? '<span class="pastille">'+esc(ME.code)+'</span><b>'+esc(ME.name)+'</b>'+
       (coupe ? '<span class="pastille pulse">reconnexion…</span>' : '')
     : "";
-  if(h === BANDEAU_VU) return;
-  BANDEAU_VU = h;
+  const h = (ME.name && ME.playerId)
+    ? '<button class="avbtn" id="avBtn" type="button" '+
+      'title="Changer de pseudo ou de figure" aria-label="Changer de pseudo ou de figure">'+
+      avatarHTML(ME.avatar, 32)+'</button>'
+    : "";
+  if(h + "|" + gauche === BANDEAU_VU) return;
+  BANDEAU_VU = h + "|" + gauche;
+  const id = $("#ident");
+  if(id) id.innerHTML = gauche;
   $("#who").innerHTML = h;
   const b = $("#avBtn");
   if(b) b.onclick = ouvrirAvatars;
