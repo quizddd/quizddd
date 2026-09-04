@@ -24,8 +24,40 @@
   --f-mono:"DM Mono",ui-monospace,Consolas,monospace;
   color-scheme:dark;
 }
+/* Palette claire, calquee sur celle de la console pour que les deux ecrans se
+   ressemblent. Sans data-theme, on suit le reglage de l'appareil. */
+:root[data-theme="light"]{
+  --bg:#F3F2FA; --bg-2:#EAE8F5; --surface:#FFFFFF; --surface-2:#F6F5FC; --surface-3:#EDEBF7;
+  --line:#D8D5EA; --line-soft:#E8E6F3;
+  --text:#16183A; --text-2:#474B77; --text-3:#5F6288;
+  --gold:#E9A013; --gold-ink:#2A1E05; --gold-dim:rgba(233,160,19,.14);
+  --rose:#E11D48; --rose-dim:rgba(225,29,72,.11);
+  --mint:#0E9F6E; --mint-ink:#F0FFF9; --mint-dim:rgba(14,159,110,.13);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme]){
+    --bg:#F3F2FA; --bg-2:#EAE8F5; --surface:#FFFFFF; --surface-2:#F6F5FC; --surface-3:#EDEBF7;
+    --line:#D8D5EA; --line-soft:#E8E6F3;
+    --text:#16183A; --text-2:#474B77; --text-3:#5F6288;
+    --gold:#E9A013; --gold-ink:#2A1E05; --gold-dim:rgba(233,160,19,.14);
+    --rose:#E11D48; --rose-dim:rgba(225,29,72,.11);
+    --mint:#0E9F6E; --mint-ink:#F0FFF9; --mint-dim:rgba(14,159,110,.13);
+    color-scheme:light;
+  }
+}
+
 /* Themes drapeau : fond sombre, mais les trois couleurs bien presentes, et un
    lisere sous la barre du haut qui donne son identite au theme. */
+:root[data-theme="dark"]{
+  --bg:#0D0F22; --bg-2:#12152C; --surface:#1A1E3C; --surface-2:#232848; --surface-3:#2C3255;
+  --line:#2F3560; --line-soft:#242949;
+  --text:#F2EFE6; --text-2:#C2C6E2; --text-3:#9AA0C6;
+  --gold:#F5B841; --gold-ink:#241A03; --gold-dim:rgba(245,184,65,.16);
+  --rose:#FF5470; --rose-dim:rgba(255,84,112,.16);
+  --mint:#35D6A0; --mint-ink:#03231A; --mint-dim:rgba(53,214,160,.16);
+  color-scheme:dark;
+}
 :root[data-theme="belge"]{
   --bg:#12100B; --bg-2:#1A1710; --surface:#221E15; --surface-2:#2C2719; --surface-3:#38311F;
   --line:#4A4029; --line-soft:#2F2A1C;
@@ -129,7 +161,7 @@ main{flex:1; min-height:0; display:flex; flex-direction:column; align-items:cent
 /* Le code et le pseudo suivent la marque ; le chrono garde le centre, l'avatar
    et le thème sont a droite. */
 .ident{display:flex; align-items:center; gap:9px; min-width:0}
-.ident b{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:14ch}
+.who b{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:14ch}
 .chrono{
   margin:0 auto; font-family:var(--f-mono); font-size:1.45rem; font-weight:500;
   font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1;
@@ -493,12 +525,14 @@ const $ = s => document.querySelector(s);
    theme clair jamais eprouve. Les deux drapeaux, eux, sont sombres. */
 const THEME_CLE = "regie-quiz:theme";
 const THEMES = [
-  {id:"",         nom:"Sombre",   ton:"#14172E"},
-  {id:"belge",    nom:"Belge",    ton:"linear-gradient(90deg,#1A1A1A 0 33%,#FDDA24 33% 66%,#EF3340 66%)"},
-  {id:"francais", nom:"Français", ton:"linear-gradient(90deg,#2743A6 0 33%,#F4F6FA 33% 66%,#E4374A 66%)"},
+  {id:"",         nom:"Selon le système", ton:"linear-gradient(90deg,#111 50%,#eee 50%)"},
+  {id:"dark",     nom:"Sombre",           ton:"#14172E"},
+  {id:"light",    nom:"Clair",            ton:"#F3F1EA"},
+  {id:"belge",    nom:"Belge",            ton:"linear-gradient(90deg,#1A1A1A 0 33%,#FDDA24 33% 66%,#EF3340 66%)"},
+  {id:"francais", nom:"Français",         ton:"linear-gradient(90deg,#2743A6 0 33%,#F4F6FA 33% 66%,#E4374A 66%)"},
 ];
 function poseTheme(t){
-  if(t === "belge" || t === "francais") document.documentElement.setAttribute("data-theme", t);
+  if(THEMES.some(x => x.id && x.id === t)) document.documentElement.setAttribute("data-theme", t);
   else document.documentElement.removeAttribute("data-theme");
 }
 function fermeThemes(){
@@ -513,7 +547,7 @@ function ouvreThemes(){
   if(!b.hidden) return fermeThemes();
   let cur = "";
   try{ cur = localStorage.getItem(THEME_CLE) || ""; }catch(e){}
-  if(cur !== "belge" && cur !== "francais") cur = "";
+  if(!THEMES.some(x => x.id === cur)) cur = "";
   b.innerHTML = THEMES.map(t =>
     '<button type="button" data-t="'+t.id+'"'+(t.id === cur ? ' class="on"' : '')+'>'+
       '<i style="background:'+t.ton+'"></i><span>'+t.nom+'</span></button>').join("");
@@ -540,7 +574,7 @@ let ETAT = null, V = -1, DERIVE = 0, TIC = null, VU = "";
 let VOLUME = 1, CMD_SEQ = 0, BUZZ_VU = null, CHAT_VU = "", BANDEAU_VU = "";
 let PACK_ENTREE = [];
 let AV_ENVOI = null;
-const VERSION = "04/09/2026 à 02:45";
+const VERSION = "04/09/2026 à 02:56";
 
 try{ ME = Object.assign(ME, JSON.parse(localStorage.getItem(CLE) || "{}")); }catch(e){}
 const garder = ()=>{ try{ localStorage.setItem(CLE, JSON.stringify(ME)); }catch(e){} };
@@ -794,16 +828,19 @@ async function boucle(){
 /* Le bandeau se repeint à chaque tour de boucle : sans ce garde-fou, le
    bouton de la figure serait remplacé sous le doigt du joueur. */
 function majBandeau(coupe){
-  /* Deux moitiés : l'identité colle à la marque, l'avatar reste à droite avec
-     le bouton de thème. */
+  /* Le code accompagne la marque ; le pseudo et l'avatar vont ensemble a
+     droite, ou l'on regarde pour savoir qui on est. */
   const gauche = ME.name
-    ? '<span class="pastille">'+esc(ME.code)+'</span><b>'+esc(ME.name)+'</b>'+
+    ? '<span class="pastille">'+esc(ME.code)+'</span>'+
       (coupe ? '<span class="pastille pulse">reconnexion…</span>' : '')
     : "";
-  const h = (ME.name && ME.playerId)
-    ? '<button class="avbtn" id="avBtn" type="button" '+
-      'title="Changer de pseudo ou de figure" aria-label="Changer de pseudo ou de figure">'+
-      avatarHTML(ME.avatar, 32)+'</button>'
+  const h = ME.name
+    ? '<b>'+esc(ME.name)+'</b>'+
+      (ME.playerId
+        ? '<button class="avbtn" id="avBtn" type="button" '+
+          'title="Changer de pseudo ou de figure" aria-label="Changer de pseudo ou de figure">'+
+          avatarHTML(ME.avatar, 32)+'</button>'
+        : "")
     : "";
   if(h + "|" + gauche === BANDEAU_VU) return;
   BANDEAU_VU = h + "|" + gauche;
